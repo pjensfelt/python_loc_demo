@@ -115,10 +115,16 @@ class ParticleArtist:
     for the likelihood visualisation, where the absolute weights are
     meaningless but their relative size is not.
 
-    Which particles make up that subset is only re-rolled when `changed` says
-    the particle set itself moved (a predict/update/resample/resize). Redrawn
-    every animation frame regardless, a fresh random subset made a perfectly
-    static cloud (e.g. the robot standing still) look like it was flickering.
+    Which *column indices* make up that subset is only re-rolled when the
+    particle count changes (a resize), not on every frame. predict/update/
+    resample all keep writing to the same N columns -- particle index 3 is
+    still particle 3 after a motion step, and still refers to whatever
+    survived there after a resample -- so a fixed set of indices already
+    tracks it correctly and just shows it move or occasionally get replaced
+    by a fitter neighbour. Drawing a *fresh* random subset every frame instead
+    would show unrelated particles each time, which looks like flicker even
+    though nothing filter-wise is wrong -- rerolling only matters once the
+    column space itself has a different size to sample from.
     """
 
     def __init__(self, ax, max_draw=20000, rng=None):
@@ -127,15 +133,18 @@ class ParticleArtist:
         self.scat = ax.scatter([], [], s=4, c=[], cmap="viridis", zorder=2)
         (self.plain,) = ax.plot([], [], "b.", ms=2, zorder=2)
         self._sel = None
+        self._n = None
 
-    def set(self, X, w, colored, changed=True):
+    def set(self, X, w, colored):
         n = X.shape[1]
         if n > self.max_draw:
-            if changed or self._sel is None or len(self._sel) != self.max_draw:
+            if self._sel is None or self._n != n:
                 self._sel = self.rng.choice(n, self.max_draw, replace=False)
+                self._n = n
             X, w = X[:, self._sel], w[self._sel]
         else:
             self._sel = None
+            self._n = n
         self.scat.set_visible(colored)
         self.plain.set_visible(not colored)
         if colored:

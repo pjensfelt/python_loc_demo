@@ -59,9 +59,9 @@ def main():
         rho, phi = world.measure(state)
 
         # ---- filter ----------------------------------------------------
-        # Tracks whether the particle set itself changed this frame, so the
-        # display (see ParticleArtist.set) only re-rolls which subset of a
-        # large cloud it draws when there is something new to show.
+        # Tracks whether the particle set changed this frame, so the cached
+        # Gaussian overlay (drawn from a fresh random resample every time
+        # it's recomputed) is only redone when there's something new to fit.
         changed = False
         if state.forceUpdate or state.moving:
             state.forceUpdate = False
@@ -106,7 +106,7 @@ def main():
             return []
 
         # ---- drawing ---------------------------------------------------
-        particles.set(pf.X, pf.w, state.coloredPts, changed=changed)
+        particles.set(pf.X, pf.w, state.coloredPts)
         true_robot.set_pose(*world.pose)
         rays.set(world.pose, rho, phi, state.lmask,
                  state.use_range or state.use_bearing)

@@ -5,10 +5,19 @@ so the arrow keys nudge v and w up and down rather than driving the robot only
 while held.  Space stops.
 """
 
+import time
+
 import numpy as np
 import matplotlib as mpl
 
 from .params import DemoState, N_LADDER, V_STEP, V_MAX, W_STEP, W_MAX, TUNABLES
+
+# Below this gap between two presses of the *same* key, the second one is
+# dropped. A human tapping a key deliberately is never this fast, so this
+# only ever suppresses OS/window-manager key auto-repeat -- or, worse, a
+# stuck key event that keeps re-firing after you've let go, which otherwise
+# looks exactly like the filter "updating on its own".
+_MIN_REPEAT_INTERVAL = 0.15
 
 _COMMON_HELP = """
  driving            filter / display        parameters
@@ -65,10 +74,17 @@ def make_handler(state: DemoState, fig=None, on_help=None, particles=False):
     def clamp(value, limit):
         return float(np.clip(value, -limit, limit))
 
+    last_press = {}
+
     def handler(event):
         k = event.key
         if k is None:
             return
+
+        now = time.monotonic()
+        if now - last_press.get(k, -1.0) < _MIN_REPEAT_INTERVAL:
+            return
+        last_press[k] = now
 
         # ---- driving -------------------------------------------------
         if k == "up":
@@ -87,6 +103,7 @@ def make_handler(state: DemoState, fig=None, on_help=None, particles=False):
         # ---- one-shot requests --------------------------------------
         elif k == "r":
             state.reset = True
+            state.tspeed = state.rspeed = 0.0
         elif k == "u":
             state.setUniform = True
         elif k == "d":
