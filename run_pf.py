@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Monte Carlo Localization demo (particle filter).  Port of MCL.m.
+"""Monte Carlo Localization demo (particle filter).
 
     python run_pf.py --particles 1000
     python run_pf.py --headless --steps 300 --seed 1 --v 0.5 --set model.rho=1.0
@@ -21,8 +21,8 @@ def main():
 
     params = Params()
     state = DemoState(newN=args.particles)
-    # MCL.m deliberately uses larger motion noise than the EKF so the particles
-    # spread out and explore the state space.
+    # Deliberately larger motion noise than the EKF's default, so the
+    # particles spread out and explore the state space.
     for name in ("td", "rda", "rd"):
         state.set_value("model", name, 0.25)
     state.n_idx = min(range(len(N_LADDER)),

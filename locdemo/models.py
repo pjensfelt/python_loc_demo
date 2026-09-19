@@ -1,9 +1,5 @@
 """Motion and measurement models, shared by the simulator and both filters.
 
-Replaces motionmodel.m and measurementmodel.m (the latter was broken in the
-MATLAB version -- it referenced xt/yt/at instead of its own arguments -- so
-nothing ever called it and the models were inlined in EKF.m and MCL.m).
-
 Every function here works both on scalars and on arrays of particles, so the
 particle filter can evaluate a whole sample set with the same expressions the
 EKF uses for a single state.
@@ -32,8 +28,8 @@ def sample_motion_noise(v, w, dT, td_std, rda_std, rd_std, size=None, rng=None):
     Returns (D, DA): the noisy distance travelled and heading change.  The
     standard deviation of each source is proportional to the nominal distance
     D = v*dT or heading change DA = w*dT, so a stationary robot accumulates no
-    error.  This is the model used by move_uncertain_robot.m, MCL.m and,
-    in linearised form, by the EKF.
+    error.  The particle filter draws from this directly; the EKF uses its
+    linearised form instead.
     """
     rng = np.random.default_rng() if rng is None else rng
     D, DA = v * dT, w * dT
@@ -55,9 +51,8 @@ def motion_jacobians(a, D):
     A -- d f / d state, W -- d f / d noise, with the noise vector ordered as
     (distance error, turn-from-turning error, turn-from-driving error).
 
-    NOTE: `a` must be the heading *before* the step.  EKF.m evaluated this with
-    the already-propagated heading (line 87), which is a small but real error
-    at dT = 0.1.
+    NOTE: `a` must be the heading *before* the step; evaluating it at the
+    already-propagated heading instead is a small but real error at dT = 0.1.
     """
     A = np.array([[1.0, 0.0, -D * np.sin(a)],
                   [0.0, 1.0, D * np.cos(a)],

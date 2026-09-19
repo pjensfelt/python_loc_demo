@@ -1,14 +1,13 @@
-"""Monte Carlo Localization (particle filter).  Port of MCL.m.
+"""Monte Carlo Localization (particle filter).
 
-MCL.m loops over particles one at a time, on the grounds that matrix
-operations would make the code harder to read.  In Python a per-particle loop
-is far too slow at 10k-100k particles, so the expressions below are vectorised
-over particles while keeping the explicit loop over the (at most four)
-landmarks.  Each line still reads like the scalar formula.
+A per-particle Python loop is far too slow at 10k-100k particles, so the
+expressions below are vectorised over particles while keeping the explicit
+loop over the (at most four) landmarks.  Each line still reads like the
+scalar formula.
 
-Weights are deliberately *not* normalised, matching MATLAB: they are multiplied
-by the measurement likelihood at every update and only reset by resampling.
-That is what makes weight degeneracy visible when resampling is switched off.
+Weights are deliberately *not* normalised: they are multiplied by the
+measurement likelihood at every update and only reset by resampling.  That is
+what makes weight degeneracy visible when resampling is switched off.
 """
 
 import numpy as np
@@ -20,9 +19,9 @@ from .params import Params, DemoState
 def resample_stratified(w, newN, rng=None):
     """Stratified resampling; returns `newN` indices into `w`.
 
-    Same algorithm as resample_stratified.m (originally from Jose-Luis Blanco),
-    written with searchsorted so it is O(N log N) instead of a Python loop.
-    Handles unnormalised weights and a target size different from len(w).
+    Jose-Luis Blanco's algorithm, written with searchsorted so it is
+    O(N log N) instead of a Python loop.  Handles unnormalised weights and a
+    target size different from len(w).
     """
     rng = np.random.default_rng() if rng is None else rng
     w = np.asarray(w, dtype=float)
@@ -49,7 +48,7 @@ class ParticleFilter:
         return self.X.shape[1]
 
     def reset(self, N=None):
-        """All particles at the origin with equal weight. (reset_particles.m)"""
+        """All particles at the origin with equal weight."""
         N = self.N if N is None else N
         self.X = np.zeros((3, N))
         self.w = np.full(N, 1.0 / N)
@@ -65,9 +64,9 @@ class ParticleFilter:
     def set_size(self, newN):
         """Change the particle count by resampling to the new size.
 
-        MATLAB resampled but left the parents' weights on the children, so a
-        resize silently reweighted the set; here the weights are made uniform
-        as any resampling step should.
+        The new weights are uniform, as any resampling step should leave
+        them -- carrying the parents' weights over to the children would
+        silently reweight the set.
         """
         if newN == self.N:
             return
@@ -77,7 +76,7 @@ class ParticleFilter:
 
     # ------------------------------------------------------------------
     def maybe_resample(self, state: DemoState):
-        """Resample when the accumulated weight has decayed. (MCL.m 64-68)"""
+        """Resample when the accumulated weight has decayed."""
         if state.resample and self.w.sum() < 0.5:
             idx = resample_stratified(self.w, self.N, self.rng)
             self.X = self.X[:, idx]
@@ -86,10 +85,7 @@ class ParticleFilter:
         return False
 
     def predict(self, state: DemoState):
-        """Push every particle through the motion model with its own noise.
-
-        (MCL.m 91-97, vectorised over particles.)
-        """
+        """Push every particle through the motion model with its own noise."""
         D, DA = models.sample_motion_noise(
             state.tspeed, state.rspeed, self.p.dT,
             state.value("model", "td"),
@@ -101,7 +97,7 @@ class ParticleFilter:
             self.X[0], self.X[1], self.X[2], D, DA)
 
     def update(self, rho, phi, state: DemoState):
-        """Multiply each particle's weight by p(z | x).  (MCL.m 108-133)"""
+        """Multiply each particle's weight by p(z | x)."""
         for l in range(self.p.NL):
             if not state.lmask[l]:
                 continue
@@ -122,9 +118,9 @@ class ParticleFilter:
     def gaussian_approx(self, n_draw=1000):
         """Mean and xy covariance of the posterior, for the overlay.
 
-        Estimated from a resampled (hence weight-free) subset, as in MCL.m.
-        Returns None when every draw comes from the same parent, since the
-        covariance is then degenerate.
+        Estimated from a resampled (hence weight-free) subset.  Returns None
+        when every draw comes from the same parent, since the covariance is
+        then degenerate.
         """
         idx = resample_stratified(self.w, n_draw, self.rng)
         if idx.max() == idx.min():

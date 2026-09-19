@@ -1,8 +1,7 @@
 # Python localization demos
 
 Demos of the Extended Kalman Filter and the Particle Filter (Monte Carlo
-Localization) for localization, used during lectures. Python port of the
-MATLAB demos in `../matlab_loc_demos`.
+Localization) for localization, used during lectures.
 
 There are four point landmarks which you can turn on and off. You control what
 the robot's sensors really measure *and* what the filter believes about them,
@@ -41,9 +40,8 @@ for the key list at any time.
 that do something in that filter, so the PF-only and EKF-only rows above
 don't show up in the other program's key list.
 
-The sliders of the MATLAB version were set-point controls: you set a speed and
-the robot kept going. The arrow keys work the same way, so `space` is how you
-stop.
+Driving is set-point control: you set a speed and the robot keeps going. The
+arrow keys nudge the set point up and down, so `space` is how you stop.
 
 ## True values and modelled values
 
@@ -77,11 +75,6 @@ model is *smaller* than the truth is over-confident: it will shrink its
 covariance, stop listening to measurements and diverge. A filter whose model is
 *larger* than the truth is under-confident: it survives, but throws away
 precision. Try `l` on a row to see the matched case, then detune it.
-
-In the MATLAB version only the sensor row was split this way, and only the
-model half could be reached from the UI. The true motion noise was always
-zero, so the robot went exactly where it was told while the filter assumed
-otherwise.
 
 ## EKF
 
@@ -176,7 +169,7 @@ approach underflow, and `sum w` and `N_eff` in the panel tell the same story.
 ### Simulation and the actual filter
 
 Which parts of the code are simulating the world and which are estimating it?
-In this port the answer is structural: `locdemo/world.py` is the simulation,
+Here the answer is structural: `locdemo/world.py` is the simulation,
 `locdemo/ekf.py` and `locdemo/pf.py` are the filters, and `locdemo/models.py`
 holds the models they share.
 
@@ -197,7 +190,7 @@ We use point landmarks. How would you change the code to use
 * line segments — what does the measurement model look like?
 * raw laser scans — represented how, and with what measurement model?
 
-## Notes on the port
+## Implementation notes
 
 The filter mathematics is written out in numpy rather than taken from a
 filtering library, because those fifteen lines are the thing being taught.
@@ -207,26 +200,9 @@ exercise.
 
 The particle filter is vectorised over particles and keeps the explicit loop
 over landmarks, which is why 100 000 particles run at about 7 ms per step. The
-weights are *not* normalised, exactly as in MATLAB, so that weight degeneracy
+weights are *not* normalised: they are multiplied by the measurement
+likelihood at every update and only reset by resampling, so weight degeneracy
 stays visible when resampling is switched off.
-
-Four things were fixed rather than ported:
-
-1. `addDisturbance` in MATLAB added `90/pi*180*rand` radians to the heading,
-   about 5156 radians rather than the intended 90 degrees, and used `rand`
-   rather than `randn` so every disturbance pushed +x, +y and +a. The
-   displacement is now symmetric, ±0.25 m and ±30°.
-2. The EKF's `Q` had `(D*tdStd)^2` in the slot belonging to `rdStd`, and never
-   used `rdStd` at all, so the EKF and the particle filter were quietly running
-   different motion models. They now share one.
-3. The motion Jacobian was evaluated at the already-propagated heading. It is
-   now evaluated before the step, as the derivation requires.
-4. Changing the particle count resampled but left the parents' weights on the
-   children. The weights are now reset, as any resampling step should.
-
-`measurementmodel.m` (which referenced undefined variables and so could never
-have run) and `est_gaussian_2d.m` (which read `bw` before assigning it) are not
-ported; a working measurement model lives in `locdemo/models.py`.
 
 ## Testing
 
@@ -236,8 +212,8 @@ ported; a working measurement model lives in `locdemo/models.py`.
 
 The interesting check is `test_ekf_covariance_matches_monte_carlo`: it compares
 the covariance the EKF predicts against 400 000 samples drawn from the same
-motion model, which is the comparison `monte_carlo_sim_odom.m` let you make by
-eye. The two agree to within 0.3%.
+motion model, which is the comparison `run_drive.py`'s montecarlo mode lets
+you make by eye. The two agree to within 0.3%.
 
 Every demo also runs without a window, which is useful for preparing a
 lecture:

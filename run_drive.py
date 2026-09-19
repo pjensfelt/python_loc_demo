@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Odometry demos.  Replaces move_robot.m, move_uncertain_robot.m and
-monte_carlo_sim_odom.m with one program and a --mode switch.
+"""Odometry demos: plain driving, true pose vs. odometry, and a Monte Carlo
+simulation of odometry drift, selected with a --mode switch.
 
     python run_drive.py --mode plain        just drive a robot around
     python run_drive.py --mode uncertain    true pose vs one noisy odometry estimate

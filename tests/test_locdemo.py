@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Checks that the ported filters do what they claim.
+"""Checks that the filters do what they claim.
 
     python tests/test_locdemo.py
 
 No test framework needed; it just asserts and prints.  The interesting one is
 test_ekf_covariance_matches_monte_carlo: it compares the covariance the EKF
 predicts against a large sample of the same motion model, which is exactly the
-comparison monte_carlo_sim_odom.m was written to let you make by eye.
+comparison run_drive.py's montecarlo mode lets you make by eye.
 """
 
 import sys, pathlib

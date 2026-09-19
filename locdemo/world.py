@@ -1,8 +1,8 @@
 """The simulated world: the true robot and the measurements it produces.
 
-This is the "simulation" half of EKF.m / MCL.m, kept apart from the filters so
-it is obvious which lines are simulating reality and which are estimating it --
-one of the questions the course README asks the students.
+Kept apart from the filters so it is obvious which lines are simulating
+reality and which are estimating it -- one of the questions the course README
+asks the students.
 """
 
 import numpy as np
@@ -29,10 +29,10 @@ class World:
     def step(self, state: DemoState):
         """Advance the true pose by one sampling interval.
 
-        Unlike the MATLAB version the true robot can itself be noisy: if the
-        TRUE motion noise factors are non-zero the robot does not go exactly
-        where it was commanded, which is what makes the true/model comparison
-        interesting.  With them at zero this reduces to EKF.m lines 57-59.
+        The true robot can itself be noisy: if the TRUE motion noise factors
+        are non-zero the robot does not go exactly where it was commanded,
+        which is what makes the true/model comparison interesting.  With them
+        at zero it goes exactly where it was commanded.
         """
         D, DA = models.sample_motion_noise(
             state.tspeed, state.rspeed, self.p.dT,
@@ -58,11 +58,7 @@ class World:
     def disturb(self):
         """Teleport the true robot a little, to break the filter's tracking.
 
-        MATLAB's version (EKF.m line 165) read
-            at = at + 90/pi*180*rand
-        which is about 5156*rand radians rather than the intended 90 degrees,
-        and used rand rather than randn so every disturbance pushed +x, +y, +a.
-        Here the displacement is symmetric: +-0.25 m and +-30 degrees.
+        The displacement is symmetric: +-0.25 m and +-30 degrees.
         """
         self.xt += self.rng.uniform(-0.25, 0.25)
         self.yt += self.rng.uniform(-0.25, 0.25)

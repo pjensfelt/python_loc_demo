@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""EKF localization demo.  Port of EKF.m.
+"""EKF localization demo.
 
     python run_ekf.py            open the window
     python run_ekf.py --headless --steps 300 --seed 1 --v 0.5 --w 10
@@ -52,10 +52,9 @@ def main():
             ekf.inject_noise()
             state.injectNoise = False
 
-        # As in MATLAB, the filter only runs while the robot is moving, or
-        # when an update is forced.  Standing still and updating forever would
-        # shrink the covariance far below what the correlated measurements
-        # justify.
+        # The filter only runs while the robot is moving, or when an update
+        # is forced.  Standing still and updating forever would shrink the
+        # covariance far below what the correlated measurements justify.
         if state.forceUpdate or state.moving:
             state.forceUpdate = False
             ekf.predict(state)

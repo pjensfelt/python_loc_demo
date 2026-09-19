@@ -1,6 +1,6 @@
-"""Keyboard control.  Replaces the buttons, sliders and popup of create_ui.m.
+"""Keyboard control.
 
-The sliders were set-point controls -- you set v and the robot kept going --
+Driving is set-point control -- you set v and w and the robot keeps going --
 so the arrow keys nudge v and w up and down rather than driving the robot only
 while held.  Space stops.
 """

@@ -1,8 +1,8 @@
-"""Drawing helpers.  Ports display_robot.m and plot_2dgauss.m.
+"""Drawing helpers.
 
-The MATLAB loops delete every graphics handle and replot from scratch on each
-iteration.  Here each artist is created once and only its data is updated,
-which is what makes 100k particles redraw at 10 Hz.
+Each artist is created once and only its data is updated on every frame,
+rather than being deleted and replotted from scratch -- which is what makes
+100k particles redraw at 10 Hz.
 """
 
 import numpy as np
@@ -25,7 +25,7 @@ def heading_line(x, y, a, length=0.5):
 
 
 def gauss_ellipse(mu, Sigma, k=np.sqrt(6.0), n=100):
-    """Level curve of a 2D Gaussian, at the same k as plot_2dgauss.m."""
+    """Level curve of a 2D Gaussian; k=sqrt(6) matches a ~95% confidence ellipse."""
     vals, vecs = np.linalg.eigh(Sigma)
     vals = np.maximum(vals, 0.0)
     t = np.linspace(0, 2 * np.pi, n)
@@ -111,9 +111,9 @@ class ParticleArtist:
     """Particle cloud, optionally coloured by weight.
 
     Above `max_draw` particles only a random subset is drawn; the filter still
-    uses all of them.  The colour scale is rescaled every frame, reproducing
-    MATLAB's autoscaled scatter -- essential for the likelihood visualisation,
-    where the absolute weights are meaningless but their relative size is not.
+    uses all of them.  The colour scale is rescaled every frame -- essential
+    for the likelihood visualisation, where the absolute weights are
+    meaningless but their relative size is not.
 
     Which particles make up that subset is only re-rolled when `changed` says
     the particle set itself moved (a predict/update/resample/resize). Redrawn
@@ -182,10 +182,7 @@ def setup_axes(fig, params: Params, title):
 
 
 class Panel:
-    """Left-hand text panel: the true/model parameter table and the status.
-
-    Replaces the sliders, toggle buttons and popup menu of create_ui.m.
-    """
+    """Left-hand text panel: the true/model parameter table and the status."""
 
     def __init__(self, fig, flags=()):
         self.flags = flags

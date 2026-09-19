@@ -1,20 +1,17 @@
 """Simulation parameters and mutable demo state.
 
-Port of simulation_parameters.m.  The MATLAB version used ~20 `global`
-variables; here the fixed world description lives in `Params` and everything
-the keyboard can change lives in `DemoState`.
+The fixed world description lives in `Params`; everything the keyboard can
+change lives in `DemoState`.
 
-The important addition over the MATLAB version is that every noise parameter
-exists in two versions:
+Every noise parameter exists in two versions:
 
     TRUE  -- used by the simulator to move the robot and generate measurements
     MODEL -- used by the filter (EKF covariances, particle spreading)
 
-In the MATLAB code only the sensor noise was split this way (rhoStd/phiStd vs
-zRhoStd/zPhiStd) and only the model half was reachable from the UI.  The motion
-noise had no split at all: the true robot moved perfectly while the filter
-assumed tdStd = 0.1.  Being able to edit both columns lets you demonstrate
-over-confident and under-confident filters directly.
+Being able to edit both columns independently lets you demonstrate
+over-confident and under-confident filters directly: set MODEL smaller than
+TRUE and watch the filter grow too sure of itself, or larger and watch it
+throw away precision it could have had.
 """
 
 from dataclasses import dataclass, field
@@ -136,8 +133,8 @@ W_STEP, W_MAX = np.deg2rad(5.0), np.deg2rad(115.0)
 class DemoState:
     """Everything the keyboard can change, plus one-shot request flags.
 
-    The main loop polls and clears the one-shot flags, exactly like the MATLAB
-    loop polled its globals.
+    The main loop polls the one-shot flags each step and clears them once
+    handled.
     """
 
     running: bool = True

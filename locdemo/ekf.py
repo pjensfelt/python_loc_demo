@@ -1,4 +1,4 @@
-"""Extended Kalman filter for landmark based localization.  Port of EKF.m.
+"""Extended Kalman filter for landmark based localization.
 
 The whole filter is the two methods below.  Everything else in this package is
 simulation, drawing or user interface.
@@ -35,12 +35,12 @@ class EKFLocalizer:
 
     # ------------------------------------------------------------------
     def predict(self, state: DemoState):
-        """Propagate the estimate through the motion model. (EKF.m 80-94)"""
+        """Propagate the estimate through the motion model."""
         dT = self.p.dT
         D, DA = state.tspeed * dT, state.rspeed * dT
 
-        # Jacobians are evaluated at the *previous* heading.  EKF.m used the
-        # already-propagated heading here, which is not the correct Jacobian.
+        # Jacobians must be evaluated at the *previous* heading -- using the
+        # already-propagated heading here would give the wrong linearisation.
         a_prev = self.X[2]
         A, W = models.motion_jacobians(a_prev, D)
 
@@ -48,9 +48,8 @@ class EKFLocalizer:
             self.X[0], self.X[1], self.X[2], D, DA)
 
         # Process noise, expressed in the three error sources of the odometry
-        # model.  MATLAB had (D*tdStd)^2 in the third slot and never used
-        # rdStd at all, so the EKF and the particle filter were quietly using
-        # different motion models.
+        # model: translation error from driving, rotation error from turning,
+        # and rotation error from driving straight.
         Q = np.diag([(D * state.value("model", "td")) ** 2,
                      (DA * state.value("model", "rda")) ** 2,
                      (D * state.value("model", "rd")) ** 2])
@@ -58,7 +57,7 @@ class EKFLocalizer:
         self.P = A @ self.P @ A.T + W @ Q @ W.T
 
     def update(self, rho, phi, state: DemoState):
-        """Fuse the landmark measurements.  (EKF.m 105-145)
+        """Fuse the landmark measurements.
 
         All enabled measurements are stacked into one batch update, so H is
         (m x 3) with one row per scalar measurement.
