@@ -1,0 +1,223 @@
+"""Drawing helpers.  Ports display_robot.m and plot_2dgauss.m.
+
+The MATLAB loops delete every graphics handle and replot from scratch on each
+iteration.  Here each artist is created once and only its data is updated,
+which is what makes 100k particles redraw at 10 Hz.
+"""
+
+import numpy as np
+from matplotlib.collections import LineCollection
+
+from .params import Params, DemoState, TUNABLES, PARAM_ROWS
+
+
+def robot_outline(x, y, a, length, width):
+    """Closed rectangle outline of the robot at pose (x, y, a)."""
+    X = np.array([[-0.5, 0.5, 0.5, -0.5, -0.5],
+                  [-0.5, -0.5, 0.5, 0.5, -0.5]]) * np.array([[length], [width]])
+    R = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+    X = R @ X
+    return x + X[0], y + X[1]
+
+
+def heading_line(x, y, a, length=0.5):
+    return [x, x + length * np.cos(a)], [y, y + length * np.sin(a)]
+
+
+def gauss_ellipse(mu, Sigma, k=np.sqrt(6.0), n=100):
+    """Level curve of a 2D Gaussian, at the same k as plot_2dgauss.m."""
+    vals, vecs = np.linalg.eigh(Sigma)
+    vals = np.maximum(vals, 0.0)
+    t = np.linspace(0, 2 * np.pi, n)
+    w = (k * vecs * np.sqrt(vals)) @ np.vstack([np.cos(t), np.sin(t)])
+    return mu[0] + w[0], mu[1] + w[1]
+
+
+class RobotArtist:
+    """Robot outline plus heading vector, drawn as two lines."""
+
+    def __init__(self, ax, params, color="k", lw=2, heading=True):
+        self.p = params
+        (self.body,) = ax.plot([], [], color=color, lw=lw, zorder=5)
+        self.head = None
+        if heading:
+            (self.head,) = ax.plot([], [], color=color, lw=lw, zorder=5)
+
+    def set_pose(self, x, y, a):
+        self.body.set_data(*robot_outline(x, y, a, self.p.length, self.p.width))
+        if self.head is not None:
+            self.head.set_data(*heading_line(x, y, a))
+
+    @property
+    def artists(self):
+        return [self.body] + ([self.head] if self.head is not None else [])
+
+
+class GaussArtist:
+    """Covariance ellipse, mean marker and the two heading-uncertainty rays.
+
+    The 'wedge' spanned by the two rays shows +-3 sigma in heading, which is
+    the lower right element of P.
+    """
+
+    def __init__(self, ax, color="b"):
+        (self.ellipse,) = ax.plot([], [], color=color, lw=1, zorder=6)
+        (self.mean,) = ax.plot([], [], "x", color=color, ms=6, mew=1.5, zorder=6)
+        (self.dir_lo,) = ax.plot([], [], color=color, lw=1, zorder=6)
+        (self.dir_hi,) = ax.plot([], [], color=color, lw=1, zorder=6)
+
+    def set(self, mu, Sigma, a, a_std=None, dir_len=0.5):
+        self.ellipse.set_data(*gauss_ellipse(np.asarray(mu[:2]), Sigma))
+        self.mean.set_data([mu[0]], [mu[1]])
+        if a_std is None:
+            self.dir_lo.set_data(*heading_line(mu[0], mu[1], a, dir_len))
+            self.dir_hi.set_data([], [])
+        else:
+            self.dir_lo.set_data(*heading_line(mu[0], mu[1], a - 3 * a_std, dir_len))
+            self.dir_hi.set_data(*heading_line(mu[0], mu[1], a + 3 * a_std, dir_len))
+
+    def set_visible(self, v):
+        for h in self.artists:
+            h.set_visible(v)
+
+    @property
+    def artists(self):
+        return [self.ellipse, self.mean, self.dir_lo, self.dir_hi]
+
+
+class RayArtist:
+    """The magenta lines from the true robot to each measured landmark."""
+
+    def __init__(self, ax, color="m", lw=1):
+        self.lc = LineCollection([], colors=color, linewidths=lw, zorder=3)
+        ax.add_collection(self.lc)
+
+    def set(self, pose, rho, phi, mask, enabled):
+        if not enabled:
+            self.lc.set_segments([])
+            return
+        xt, yt, at = pose
+        segs = [[(xt, yt),
+                 (xt + rho[k] * np.cos(at + phi[k]), yt + rho[k] * np.sin(at + phi[k]))]
+                for k in range(len(rho)) if mask[k]]
+        self.lc.set_segments(segs)
+
+    @property
+    def artists(self):
+        return [self.lc]
+
+
+class ParticleArtist:
+    """Particle cloud, optionally coloured by weight.
+
+    Above `max_draw` particles only a random subset is drawn; the filter still
+    uses all of them.  The colour scale is rescaled every frame, reproducing
+    MATLAB's autoscaled scatter -- essential for the likelihood visualisation,
+    where the absolute weights are meaningless but their relative size is not.
+
+    Which particles make up that subset is only re-rolled when `changed` says
+    the particle set itself moved (a predict/update/resample/resize). Redrawn
+    every animation frame regardless, a fresh random subset made a perfectly
+    static cloud (e.g. the robot standing still) look like it was flickering.
+    """
+
+    def __init__(self, ax, max_draw=20000, rng=None):
+        self.max_draw = max_draw
+        self.rng = np.random.default_rng() if rng is None else rng
+        self.scat = ax.scatter([], [], s=4, c=[], cmap="viridis", zorder=2)
+        (self.plain,) = ax.plot([], [], "b.", ms=2, zorder=2)
+        self._sel = None
+
+    def set(self, X, w, colored, changed=True):
+        n = X.shape[1]
+        if n > self.max_draw:
+            if changed or self._sel is None or len(self._sel) != self.max_draw:
+                self._sel = self.rng.choice(n, self.max_draw, replace=False)
+            X, w = X[:, self._sel], w[self._sel]
+        else:
+            self._sel = None
+        self.scat.set_visible(colored)
+        self.plain.set_visible(not colored)
+        if colored:
+            self.scat.set_offsets(np.column_stack([X[0], X[1]]))
+            self.scat.set_array(w)
+            lo, hi = float(w.min()), float(w.max())
+            self.scat.set_clim(lo, hi if hi > lo else lo + 1e-12)
+        else:
+            self.plain.set_data(X[0], X[1])
+
+    @property
+    def artists(self):
+        return [self.scat, self.plain]
+
+
+class PointArtist:
+    """A single estimated position, drawn as a dot."""
+
+    def __init__(self, ax, color="b", ms=6):
+        (self.pt,) = ax.plot([], [], ".", color=color, ms=ms, zorder=6)
+
+    def set(self, x, y):
+        self.pt.set_data([x], [y])
+
+    @property
+    def artists(self):
+        return [self.pt]
+
+
+def setup_axes(fig, params: Params, title):
+    """One axes with the landmarks drawn, plus room for the parameter panel."""
+    ax = fig.add_axes([0.30, 0.08, 0.68, 0.86])
+    ax.set_xlim(*params.xlim)
+    ax.set_ylim(*params.ylim)
+    ax.set_aspect("equal")
+    ax.set_title(title)
+    ax.grid(True, alpha=0.2)
+    ax.plot(params.xL, params.yL, "ko", ms=5, zorder=4)
+    offs = [(-0.3, -0.3), (0.3, -0.3), (0.3, 0.3), (-0.3, 0.3)]
+    for k in range(params.NL):
+        dx, dy = offs[k % len(offs)]
+        ax.text(params.xL[k] + dx, params.yL[k] + dy, str(k + 1), ha="center", va="center")
+    return ax
+
+
+class Panel:
+    """Left-hand text panel: the true/model parameter table and the status.
+
+    Replaces the sliders, toggle buttons and popup menu of create_ui.m.
+    """
+
+    def __init__(self, fig, flags=()):
+        self.flags = flags
+        self.text = fig.text(0.015, 0.97, "", family="monospace", fontsize=9,
+                             va="top", ha="left")
+
+    def update(self, state: DemoState, extra=""):
+        rows = ["        TRUE     MODEL", "        ----     -----"]
+        for name in PARAM_ROWS:
+            cells = []
+            for column in ("true", "model"):
+                t = next(t for t in TUNABLES if t.key == (column, name))
+                sel = TUNABLES.index(t) == state.cursor
+                txt = t.format(state.value(column, name))
+                cells.append(("[%s]" if sel else " %s ") % txt.center(7))
+            label = next(t for t in TUNABLES if t.name == name).label
+            rows.append(f"{label:>7} {cells[0]}{cells[1]}")
+
+        lm = " ".join(f"L{k+1}" if state.lmask[k] else " . " for k in range(len(state.lmask)))
+        rows += [
+            "",
+            f"v = {state.tspeed:+.2f} m/s",
+            f"w = {np.rad2deg(state.rspeed):+.1f} deg/s",
+            f"landmarks: {lm}",
+        ]
+        for label, value in self.flags:
+            rows.append(f"{label}: {'on' if value(state) else 'off'}")
+        if extra:
+            rows += ["", extra]
+        rows += ["", "press 'h' for keys"]
+        self.text.set_text("\n".join(rows))
+
+    @property
+    def artists(self):
+        return [self.text]
