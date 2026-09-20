@@ -92,7 +92,7 @@ class ParticleFilter:
         same deterministic way, on top of the per-particle noise below.
         """
         v_scale, w_scale = models.odometry_scale(
-            self.p.r, self.p.B, state.value("model", "r"), state.value("model", "B"))
+            state.value("true", "r"), state.value("true", "B"), self.p.r, self.p.B)
         D, DA = models.sample_motion_noise(
             state.tspeed * v_scale, state.rspeed * w_scale, self.p.dT,
             state.value("model", "td"),

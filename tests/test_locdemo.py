@@ -98,7 +98,7 @@ def test_ekf_wheel_bias_causes_deterministic_drift():
         ekf.predict(state)
     assert np.hypot(ekf.X[0] - world.xt, ekf.X[1] - world.yt) < 1e-9
 
-    state.set_value("model", "r", 0.055)  # true is 0.05
+    state.set_value("true", "r", 0.055)  # model (Params.r) is 0.05
     world2, ekf2 = World(params, rng=np.random.default_rng(1)), EKFLocalizer(params)
     for _ in range(50):
         world2.step(state)
@@ -112,18 +112,18 @@ def test_ekf_wheel_bias_causes_deterministic_drift():
 def test_link_selected_and_all_use_params_for_fixed_rows():
     params = Params()
     state = DemoState()
-    state.set_value("model", "r", 0.08)
-    state.set_value("model", "B", 0.35)
+    state.set_value("true", "r", 0.08)
+    state.set_value("true", "B", 0.35)
 
     state.link_all(params)
-    assert state.value("model", "r") == params.r
-    assert state.value("model", "B") == params.B
+    assert state.value("true", "r") == params.r
+    assert state.value("true", "B") == params.B
 
-    state.set_value("model", "r", 0.08)
+    state.set_value("true", "r", 0.08)
     from locdemo.params import TUNABLES
-    state.cursor = TUNABLES.index(next(t for t in TUNABLES if t.key == ("model", "r")))
+    state.cursor = TUNABLES.index(next(t for t in TUNABLES if t.key == ("true", "r")))
     state.link_selected(params)
-    assert state.value("model", "r") == params.r
+    assert state.value("true", "r") == params.r
 
 
 @test

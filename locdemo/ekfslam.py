@@ -67,7 +67,7 @@ class EKFSLAM:
         """
         dT = self.p.dT
         v_scale, w_scale = models.odometry_scale(
-            self.p.r, self.p.B, state.value("model", "r"), state.value("model", "B"))
+            state.value("true", "r"), state.value("true", "B"), self.p.r, self.p.B)
         D, DA = state.tspeed * v_scale * dT, state.rspeed * w_scale * dT
         N = len(self.X)
 

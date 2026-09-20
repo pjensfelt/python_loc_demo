@@ -26,8 +26,8 @@ _COMMON_HELP = """
  left/right w +-    u  uniform              S-tab select previous
  space      stop    d  disturb true pose    >     increase selected
  0          w = 0   enter force an update   <     decrease selected
- 1..4  toggle       g  Gaussian overlay     l     model := true (this row)
-       landmark     x  extero. noise on/off L     model := true (all rows)
+ 1..4  toggle       g  Gaussian overlay     l     zero bias (this row)
+       landmark     x  extero. noise on/off L     zero bias (all rows)
  h     this help
  q     quit"""
 
@@ -70,7 +70,7 @@ def clear_default_keymap():
 def make_handler(state: DemoState, params, fig=None, on_help=None, particles=False, slam=False):
     """Return a matplotlib key_press_event callback bound to `state`.
 
-    `params` is needed for 'l'/'L': the true value of a FIXED_TRUE_ROWS
+    `params` is needed for 'l'/'L': the model value of a FIXED_MODEL_ROWS
     tunable (wheel r/B) lives on Params, not on a ladder in `state`.
 
     `particles` selects which of the PF-only / EKF-only keys are live, and

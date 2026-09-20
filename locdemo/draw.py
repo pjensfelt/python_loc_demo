@@ -8,7 +8,7 @@ rather than being deleted and replotted from scratch -- which is what makes
 import numpy as np
 from matplotlib.collections import LineCollection
 
-from .params import Params, DemoState, TUNABLES, PARAM_ROWS, FIXED_TRUE_ROWS
+from .params import Params, DemoState, TUNABLES, PARAM_ROWS, FIXED_MODEL_ROWS
 
 
 def robot_outline(x, y, a, length, width):
@@ -270,15 +270,16 @@ class Panel:
             label = next(t for t in TUNABLES if t.name == name).label
             rows.append(f"{label:>7} {cells[0]}{cells[1]}")
 
-        # Wheel r/B: true is fixed on Params (never selectable, no brackets),
-        # only the model belief is an editable ladder entry.
+        # Wheel r/B: model is fixed on Params (never selectable, no
+        # brackets), only the true hardware value is an editable ladder
+        # entry.
         rows.append("        (odometry calibration)")
-        for name in FIXED_TRUE_ROWS:
-            t = next(t for t in TUNABLES if t.key == ("model", name))
+        for name in FIXED_MODEL_ROWS:
+            t = next(t for t in TUNABLES if t.key == ("true", name))
             sel = TUNABLES.index(t) == state.cursor
-            true_cell = " %s " % t.format(getattr(params, name)).center(7)
-            model_txt = t.format(state.value("model", name))
-            model_cell = ("[%s]" if sel else " %s ") % model_txt.center(7)
+            true_txt = t.format(state.value("true", name))
+            true_cell = ("[%s]" if sel else " %s ") % true_txt.center(7)
+            model_cell = " %s " % t.format(getattr(params, name)).center(7)
             rows.append(f"{t.label:>7} {true_cell}{model_cell}")
 
         lm = " ".join(f"L{k+1}" if state.lmask[k] else " . " for k in range(len(state.lmask)))

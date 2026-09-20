@@ -16,10 +16,13 @@ throw away precision it could have had.
 Two more rows, wheel radius `r` and wheelbase `B`, model a *deterministic*
 error instead of noise: a differential-drive robot's odometry converts wheel
 encoder ticks to distance using an assumed `r`/`B`, and if that assumption is
-wrong the odometry is systematically biased even with perfect encoders. These
-two are fixed on the TRUE side (`Params.r`/`Params.B` -- real hardware, not
-something to edit live) and editable only on the MODEL side, via
-`odometry_scale` in `models.py`.
+wrong the odometry is systematically biased even with perfect encoders. Real
+hardware never machines a wheel to exactly the radius on its spec sheet, so
+it's the *true* value that varies from one robot to the next -- the model's
+assumed `r`/`B` is a fixed constant the controller was built around. These
+two are therefore fixed on the MODEL side (`Params.r`/`Params.B` -- the
+assumed calibration, not something to edit live) and editable only on the
+TRUE side, via `odometry_scale` in `models.py`.
 """
 
 from dataclasses import dataclass, field
@@ -38,9 +41,11 @@ class Params:
     length: float = 0.3
     width: float = 0.2
 
-    # True wheel radius and wheelbase [m], for the odometry-bias demo.
-    # Fixed hardware, not editable live -- only the odometry's *belief*
-    # about them (the "r"/"B" model tunables below) can be detuned.
+    # Modelled (assumed) wheel radius and wheelbase [m], for the
+    # odometry-bias demo. Fixed calibration constants the controller's
+    # odometry assumes -- not editable live -- only the *true* hardware
+    # values (the "r"/"B" true tunables below) can be detuned away from
+    # these.
     r: float = 0.05
     B: float = 0.2
 
@@ -84,23 +89,23 @@ _PHI_DEG = [0.0, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0]
 _PHI_TRUE = [np.deg2rad(d) for d in _PHI_DEG]
 _PHI_MODEL = [-1.0] + _PHI_TRUE[1:]
 
-# Wheel radius and wheelbase [m], laddered around the true values (0.05,
-# 0.2) declared on Params -- there is no "off" here, since odometry always
-# assumes *some* r/B, even when it happens to be the right one.
+# Wheel radius and wheelbase [m], laddered around the modelled values (0.05,
+# 0.2) declared on Params -- there is no "off" here, since the real hardware
+# always has *some* r/B, even when it happens to match the model exactly.
 #
 # r: 1mm resolution throughout, capped at +/-2cm -- being off by more than
 # that on a 5cm wheel seems unlikely in practice.
-_R_TRUE = 0.05  # must match Params.r
+_R_MODEL = 0.05  # must match Params.r
 _R_DEV_MM = list(range(-20, 21))                    # +/-20mm in 1mm steps
-_R_LADDER = [round(_R_TRUE + d / 1000, 6) for d in _R_DEV_MM]
+_R_LADDER = [round(_R_MODEL + d / 1000, 6) for d in _R_DEV_MM]
 _R_DEFAULT = _R_DEV_MM.index(0)
 
-# B: 1mm resolution close to the true value (+/-1cm), coarser 1cm steps
+# B: 1mm resolution close to the modelled value (+/-1cm), coarser 1cm steps
 # further out, capped at +/-10cm total.
-_B_TRUE = 0.2  # must match Params.B
+_B_MODEL = 0.2  # must match Params.B
 _B_MAG_MM = sorted(set(range(0, 11)) | set(range(20, 101, 10)))  # 0..10, 20..100
 _B_DEV_MM = sorted({-m for m in _B_MAG_MM} | set(_B_MAG_MM))
-_B_LADDER = [round(_B_TRUE + d / 1000, 6) for d in _B_DEV_MM]
+_B_LADDER = [round(_B_MODEL + d / 1000, 6) for d in _B_DEV_MM]
 _B_DEFAULT = _B_DEV_MM.index(0)
 
 
@@ -146,19 +151,19 @@ TUNABLES: List[Tunable] = [
     # bearing
     Tunable("phi", "true", "sig_phi", _PHI_TRUE, _PHI_DEG.index(1.0), "deg"),
     Tunable("phi", "model", "sig_phi", _PHI_MODEL, 0, "deg"),
-    # wheel radius and wheelbase -- model-only, see FIXED_TRUE_ROWS below
-    Tunable("r", "model", "r", _R_LADDER, _R_DEFAULT, "m"),
-    Tunable("B", "model", "B", _B_LADDER, _B_DEFAULT, "m"),
+    # wheel radius and wheelbase -- true-only, see FIXED_MODEL_ROWS below
+    Tunable("r", "true", "r", _R_LADDER, _R_DEFAULT, "m"),
+    Tunable("B", "true", "B", _B_LADDER, _B_DEFAULT, "m"),
 ]
 
 TUNABLE_BY_KEY = {t.key: t for t in TUNABLES}
 PARAM_ROWS = ["td", "rda", "rd", "rho", "phi"]
 
-# Rows with no "true" Tunable at all: the true value is the fixed
+# Rows with no "model" Tunable at all: the model value is the fixed
 # Params.r/Params.B, not something edited via the ladder mechanism. Kept
-# separate from PARAM_ROWS since callers that need the true value for one of
-# these must read it off Params instead of calling state.value("true", ...).
-FIXED_TRUE_ROWS = ["r", "B"]
+# separate from PARAM_ROWS since callers that need the model value for one of
+# these must read it off Params instead of calling state.value("model", ...).
+FIXED_MODEL_ROWS = ["r", "B"]
 
 # Particle counts offered by the 'n' / 'N' keys (was a popup menu).  The
 # filter math is vectorised and handles a million particles in ~50ms; what
@@ -230,21 +235,24 @@ class DemoState:
     def selected(self) -> Tunable:
         return TUNABLES[self.cursor]
 
-    def true_value(self, name: str, params: Params) -> float:
-        """The true value of a row, whether it's a ladder Tunable or one of
-        FIXED_TRUE_ROWS living on Params instead."""
-        if name in FIXED_TRUE_ROWS:
-            return getattr(params, name)
-        return self.value("true", name)
-
     def link_selected(self, params: Params) -> None:
-        """Copy the true value of the selected row into its model entry."""
+        """Zero out the bias on the selected row.
+
+        For an ordinary row that's model := true. For a FIXED_MODEL_ROWS row
+        (wheel r/B) the model is the fixed constant on Params, so it's the
+        editable true side that gets reset to match it instead.
+        """
         name = self.selected.name
-        self.set_value("model", name, self.true_value(name, params))
+        if name in FIXED_MODEL_ROWS:
+            self.set_value("true", name, getattr(params, name))
+        else:
+            self.set_value("model", name, self.value("true", name))
 
     def link_all(self, params: Params) -> None:
-        for name in PARAM_ROWS + FIXED_TRUE_ROWS:
-            self.set_value("model", name, self.true_value(name, params))
+        for name in PARAM_ROWS:
+            self.set_value("model", name, self.value("true", name))
+        for name in FIXED_MODEL_ROWS:
+            self.set_value("true", name, getattr(params, name))
 
     def toggle_extero(self) -> None:
         """Force the modelled range/bearing noise to 'off', or restore it.

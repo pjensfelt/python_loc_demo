@@ -61,7 +61,7 @@ def main():
 
         if args.mode != "plain":
             v_scale, w_scale = models.odometry_scale(
-                params.r, params.B, state.value("model", "r"), state.value("model", "B"))
+                state.value("true", "r"), state.value("true", "B"), params.r, params.B)
             D, DA = models.sample_motion_noise(
                 state.tspeed * v_scale, state.rspeed * w_scale, params.dT,
                 state.value("model", "td"),
