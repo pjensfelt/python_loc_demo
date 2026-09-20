@@ -32,18 +32,22 @@ _COMMON_HELP = """
  q     quit"""
 
 _EKF_ONLY = """
-                    i  inject noise (EKF)"""
+                    i  inject noise (EKF/SLAM)"""
 
 _PF_ONLY = """
                     c  colour by weight     n/N   fewer/more particles
                     p  resampling on/off"""
 
+_SLAM_ONLY = """
+                    s  superGPS fix (SLAM)"""
 
-def help_text(particles: bool = False) -> str:
-    """The key list for the current demo; PF and EKF each have a few keys
-    the other doesn't, so they get their own copy of the mode-specific line.
+
+def help_text(particles: bool = False, slam: bool = False) -> str:
+    """The key list for the current demo; PF, EKF and SLAM each have a few
+    keys the others don't, so they get their own copy of the mode-specific
+    line. SLAM shares 'i' with EKF (both are Kalman filters) and adds 's'.
     """
-    extra = _PF_ONLY if particles else _EKF_ONLY
+    extra = _PF_ONLY if particles else (_EKF_ONLY + (_SLAM_ONLY if slam else ""))
     return _COMMON_HELP + extra + "\n"
 
 
@@ -63,12 +67,15 @@ def clear_default_keymap():
             mpl.rcParams[k] = []
 
 
-def make_handler(state: DemoState, fig=None, on_help=None, particles=False):
+def make_handler(state: DemoState, params, fig=None, on_help=None, particles=False, slam=False):
     """Return a matplotlib key_press_event callback bound to `state`.
 
-    `particles` selects which of the PF-only / EKF-only keys are live, so the
-    other filter's controls don't show up as active (or in the help) when
-    they wouldn't do anything.
+    `params` is needed for 'l'/'L': the true value of a FIXED_TRUE_ROWS
+    tunable (wheel r/B) lives on Params, not on a ladder in `state`.
+
+    `particles` selects which of the PF-only / EKF-only keys are live, and
+    `slam` additionally enables the superGPS key, so a filter's controls
+    don't show up as active (or in the help) when they wouldn't do anything.
     """
 
     def clamp(value, limit):
@@ -112,6 +119,8 @@ def make_handler(state: DemoState, fig=None, on_help=None, particles=False):
             state.injectNoise = True
         elif k == "enter":
             state.forceUpdate = True
+        elif k == "s" and slam:
+            state.superGPS = True
 
         # ---- toggles -------------------------------------------------
         elif k == "g":
@@ -130,7 +139,12 @@ def make_handler(state: DemoState, fig=None, on_help=None, particles=False):
         # ---- parameter editing ---------------------------------------
         elif k == "tab":
             state.cursor = (state.cursor + 1) % len(TUNABLES)
-        elif k in ("shift+tab", "backtab", "ctrl+tab"):
+        elif "tab" in k.lower():
+            # Shift-Tab's key string is backend- and platform-dependent --
+            # "shift+tab" on some, the bare special name "backtab" on
+            # others (e.g. macOS's native backend) -- so anything
+            # Tab-flavoured that isn't plain "tab" is treated as the
+            # backward step, rather than guessing at exact literals.
             state.cursor = (state.cursor - 1) % len(TUNABLES)
         elif k == ">":
             t = state.selected
@@ -139,9 +153,9 @@ def make_handler(state: DemoState, fig=None, on_help=None, particles=False):
             t = state.selected
             state.step(t.column, t.name, -1)
         elif k == "l":
-            state.link_selected()
+            state.link_selected(params)
         elif k == "L":
-            state.link_all()
+            state.link_all(params)
 
         # ---- particle count ------------------------------------------
         elif k == "N" and particles:
@@ -153,7 +167,7 @@ def make_handler(state: DemoState, fig=None, on_help=None, particles=False):
 
         # ---- meta -----------------------------------------------------
         elif k == "h":
-            print(help_text(particles))
+            print(help_text(particles, slam))
             if on_help is not None:
                 on_help()
         elif k == "q":
@@ -165,6 +179,7 @@ def make_handler(state: DemoState, fig=None, on_help=None, particles=False):
     return handler
 
 
-def connect(fig, state: DemoState, on_help=None, particles=False):
+def connect(fig, state: DemoState, params, on_help=None, particles=False, slam=False):
     clear_default_keymap()
-    fig.canvas.mpl_connect("key_press_event", make_handler(state, fig, on_help, particles))
+    fig.canvas.mpl_connect("key_press_event",
+                           make_handler(state, params, fig, on_help, particles, slam))

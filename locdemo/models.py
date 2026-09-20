@@ -22,6 +22,28 @@ def motion_model(x, y, a, D, DA):
     return x + D * np.cos(a), y + D * np.sin(a), a + DA
 
 
+def odometry_scale(r_true, B_true, r_model, B_model):
+    """How odometry that assumes the wrong wheel radius r and/or wheelbase B
+    distorts (v, w) into what it believes it's doing.
+
+    A wheel's encoder measures rotation directly; odometry converts that to
+    distance via the assumed radius r, and to a differential turn rate via
+    the assumed wheelbase B. A wrong r scales the believed v *and* w by the
+    same factor (both wheels' rotation-to-distance conversion is off
+    equally); a wrong B scales the believed w *again*, on top of that,
+    since B only enters the differential (rotation) term. So a wrong
+    wheelbase is strictly more damaging to heading than a wrong radius is --
+    it biases turning without touching the perceived straight-line speed.
+
+    Returns (v_scale, w_scale) such that (v * v_scale, w * w_scale) is what
+    the odometry believes the commanded (v, w) actually achieved. Both are
+    1.0 when the model matches the truth.
+    """
+    v_scale = r_model / r_true
+    w_scale = v_scale * (B_true / B_model)
+    return v_scale, w_scale
+
+
 def sample_motion_noise(v, w, dT, td_std, rda_std, rd_std, size=None, rng=None):
     """Draw the three motion error sources of the odometry model.
 

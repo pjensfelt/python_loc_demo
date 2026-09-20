@@ -35,9 +35,18 @@ class EKFLocalizer:
 
     # ------------------------------------------------------------------
     def predict(self, state: DemoState):
-        """Propagate the estimate through the motion model."""
+        """Propagate the estimate through the motion model.
+
+        The commanded (v, w) is first passed through odometry_scale: with a
+        wheel radius/wheelbase mismatch, D and DA are what the *odometry*
+        believes happened, not what actually did -- a deterministic bias on
+        top of the usual noise, and the reason a bad calibration here is so
+        much worse than ordinary noise: it never averages out.
+        """
         dT = self.p.dT
-        D, DA = state.tspeed * dT, state.rspeed * dT
+        v_scale, w_scale = models.odometry_scale(
+            self.p.r, self.p.B, state.value("model", "r"), state.value("model", "B"))
+        D, DA = state.tspeed * v_scale * dT, state.rspeed * w_scale * dT
 
         # Jacobians must be evaluated at the *previous* heading -- using the
         # already-propagated heading here would give the wrong linearisation.

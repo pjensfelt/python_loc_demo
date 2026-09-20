@@ -8,7 +8,7 @@ rather than being deleted and replotted from scratch -- which is what makes
 import numpy as np
 from matplotlib.collections import LineCollection
 
-from .params import Params, DemoState, TUNABLES, PARAM_ROWS
+from .params import Params, DemoState, TUNABLES, PARAM_ROWS, FIXED_TRUE_ROWS
 
 
 def robot_outline(x, y, a, length, width):
@@ -160,6 +160,66 @@ class ParticleArtist:
         return [self.scat, self.plain]
 
 
+class LandmarkArtist:
+    """Covariance ellipse and mean marker for one mapped landmark.
+
+    Unlike GaussArtist this has no heading, since a landmark is just a 2D
+    point.
+    """
+
+    def __init__(self, ax, color="r"):
+        (self.ellipse,) = ax.plot([], [], color=color, lw=1, zorder=6)
+        (self.mean,) = ax.plot([], [], "o", color=color, ms=5, mfc="none", mew=1.5, zorder=6)
+
+    def set(self, mu, Sigma, show_ellipse):
+        self.mean.set_data([mu[0]], [mu[1]])
+        self.ellipse.set_visible(show_ellipse)
+        if show_ellipse:
+            self.ellipse.set_data(*gauss_ellipse(np.asarray(mu), Sigma))
+
+    def set_visible(self, v):
+        self.mean.set_visible(v)
+        if not v:
+            self.ellipse.set_visible(False)
+
+    @property
+    def artists(self):
+        return [self.ellipse, self.mean]
+
+
+class LandmarkMapArtist:
+    """The growing set of mapped landmarks.
+
+    Landmarks join the state one at a time as EKFSLAM first observes them,
+    so artists are created lazily, and only ever as many as have been
+    mapped so far are shown.
+    """
+
+    def __init__(self, ax, color="r"):
+        self.ax = ax
+        self.color = color
+        self._landmarks = []
+
+    def set(self, mapped, show_ellipse):
+        """`mapped` is a list of (mean, covariance) pairs, one per landmark."""
+        while len(self._landmarks) < len(mapped):
+            self._landmarks.append(LandmarkArtist(self.ax, self.color))
+        for i, art in enumerate(self._landmarks):
+            if i < len(mapped):
+                mu, Sigma = mapped[i]
+                art.set_visible(True)
+                art.set(mu, Sigma, show_ellipse)
+            else:
+                art.set_visible(False)
+
+    @property
+    def artists(self):
+        out = []
+        for art in self._landmarks:
+            out += art.artists
+        return out
+
+
 class PointArtist:
     """A single estimated position, drawn as a dot."""
 
@@ -198,7 +258,7 @@ class Panel:
         self.text = fig.text(0.015, 0.97, "", family="monospace", fontsize=9,
                              va="top", ha="left")
 
-    def update(self, state: DemoState, extra=""):
+    def update(self, state: DemoState, params: Params, extra=""):
         rows = ["        TRUE     MODEL", "        ----     -----"]
         for name in PARAM_ROWS:
             cells = []
@@ -209,6 +269,17 @@ class Panel:
                 cells.append(("[%s]" if sel else " %s ") % txt.center(7))
             label = next(t for t in TUNABLES if t.name == name).label
             rows.append(f"{label:>7} {cells[0]}{cells[1]}")
+
+        # Wheel r/B: true is fixed on Params (never selectable, no brackets),
+        # only the model belief is an editable ladder entry.
+        rows.append("        (odometry calibration)")
+        for name in FIXED_TRUE_ROWS:
+            t = next(t for t in TUNABLES if t.key == ("model", name))
+            sel = TUNABLES.index(t) == state.cursor
+            true_cell = " %s " % t.format(getattr(params, name)).center(7)
+            model_txt = t.format(state.value("model", name))
+            model_cell = ("[%s]" if sel else " %s ") % model_txt.center(7)
+            rows.append(f"{t.label:>7} {true_cell}{model_cell}")
 
         lm = " ".join(f"L{k+1}" if state.lmask[k] else " . " for k in range(len(state.lmask)))
         rows += [

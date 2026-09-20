@@ -85,9 +85,16 @@ class ParticleFilter:
         return False
 
     def predict(self, state: DemoState):
-        """Push every particle through the motion model with its own noise."""
+        """Push every particle through the motion model with its own noise.
+
+        (v, w) is first passed through odometry_scale, same as the EKF: a
+        wheel radius/wheelbase mismatch biases every particle's motion the
+        same deterministic way, on top of the per-particle noise below.
+        """
+        v_scale, w_scale = models.odometry_scale(
+            self.p.r, self.p.B, state.value("model", "r"), state.value("model", "B"))
         D, DA = models.sample_motion_noise(
-            state.tspeed, state.rspeed, self.p.dT,
+            state.tspeed * v_scale, state.rspeed * w_scale, self.p.dT,
             state.value("model", "td"),
             state.value("model", "rda"),
             state.value("model", "rd"),

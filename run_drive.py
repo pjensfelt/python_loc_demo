@@ -52,7 +52,7 @@ def main():
         odo_robot = draw.RobotArtist(ax, params, color="b") if args.mode == "uncertain" else None
         cloud = draw.ParticleArtist(ax, rng=rng) if args.mode == "montecarlo" else None
         panel = draw.Panel(fig)
-        keys.connect(fig, state)
+        keys.connect(fig, state, params)
         if not args.snapshot:
             print(keys.HELP)
 
@@ -60,8 +60,10 @@ def main():
         world.step(state)
 
         if args.mode != "plain":
+            v_scale, w_scale = models.odometry_scale(
+                params.r, params.B, state.value("model", "r"), state.value("model", "B"))
             D, DA = models.sample_motion_noise(
-                state.tspeed, state.rspeed, params.dT,
+                state.tspeed * v_scale, state.rspeed * w_scale, params.dT,
                 state.value("model", "td"),
                 state.value("model", "rda"),
                 state.value("model", "rd"),
@@ -84,7 +86,7 @@ def main():
             odo_robot.set_pose(X[0, 0], X[1, 0], X[2, 0])
         if cloud is not None:
             cloud.set(X, np.ones(n), False)
-        panel.update(state, f"mode = {args.mode}")
+        panel.update(state, params, f"mode = {args.mode}")
         artists = true_robot.artists + panel.artists
         artists += odo_robot.artists if odo_robot else []
         artists += cloud.artists if cloud else []

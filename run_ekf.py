@@ -38,7 +38,7 @@ def main():
         rays = draw.RayArtist(ax)
         panel = draw.Panel(fig, flags=[("Gaussian", lambda s: s.dispGaussApprox),
                                        ("extero", lambda s: not s.extero_off)])
-        keys.connect(fig, state, particles=False)
+        keys.connect(fig, state, params, particles=False)
         if not args.snapshot:
             print(keys.help_text(particles=False))
 
@@ -84,7 +84,7 @@ def main():
         if state.dispGaussApprox:
             gauss.set(ekf.X[:2], ekf.P[:2, :2], ekf.X[2], np.sqrt(ekf.P[2, 2]))
         err = np.hypot(ekf.X[0] - world.xt, ekf.X[1] - world.yt)
-        panel.update(state, f"error   = {err:.3f} m\nsig_x,y = "
+        panel.update(state, params, f"error   = {err:.3f} m\nsig_x,y = "
                             f"{np.sqrt(ekf.P[0,0]):.3f}, {np.sqrt(ekf.P[1,1]):.3f} m")
         return (true_robot.artists + estimate.artists + gauss.artists
                 + rays.artists + panel.artists)

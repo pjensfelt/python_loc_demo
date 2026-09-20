@@ -46,7 +46,7 @@ def main():
                                        ("colour", lambda s: s.coloredPts),
                                        ("resample", lambda s: s.resample),
                                        ("extero", lambda s: not s.extero_off)])
-        keys.connect(fig, state, particles=True)
+        keys.connect(fig, state, params, particles=True)
         if not args.snapshot:
             print(keys.help_text(particles=True))
 
@@ -124,7 +124,7 @@ def main():
             gauss.set(mu, sigma, muA)
 
         neff = pf.w.sum() ** 2 / np.sum(pf.w ** 2)
-        panel.update(state, f"N       = {pf.N}\nsum w   = {pf.w.sum():.3e}\n"
+        panel.update(state, params, f"N       = {pf.N}\nsum w   = {pf.w.sum():.3e}\n"
                             f"N_eff   = {neff:.1f}")
         return (particles.artists + true_robot.artists + gauss.artists
                 + rays.artists + panel.artists)
