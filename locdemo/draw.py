@@ -251,6 +251,8 @@ def setup_axes(fig, params: Params, title):
     for k in range(params.NL):
         dx, dy = offs[k % len(offs)]
         ax.text(params.xL[k] + dx, params.yL[k] + dy, str(k + 1), ha="center", va="center")
+    fig.text(0.99, 0.01, "P. Jensfelt, KTH 2026", ha="right", va="bottom",
+              fontsize=7, color="0.6")
     return ax
 
 
