@@ -48,6 +48,10 @@ class RobotArtist:
         if self.head is not None:
             self.head.set_data(*heading_line(x, y, a))
 
+    def set_visible(self, v):
+        for h in self.artists:
+            h.set_visible(v)
+
     @property
     def artists(self):
         return [self.body] + ([self.head] if self.head is not None else [])

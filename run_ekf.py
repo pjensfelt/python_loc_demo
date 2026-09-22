@@ -37,7 +37,8 @@ def main():
         gauss = draw.GaussArtist(ax, color="b")
         rays = draw.RayArtist(ax)
         panel = draw.Panel(fig, flags=[("Gaussian", lambda s: s.dispGaussApprox),
-                                       ("extero", lambda s: not s.extero_off)])
+                                       ("extero", lambda s: not s.extero_off),
+                                       ("true robot", lambda s: s.showTrueRobot)])
         keys.connect(fig, state, params, particles=False)
         if not args.snapshot:
             print(keys.help_text(particles=False))
@@ -77,6 +78,7 @@ def main():
 
         # ---- drawing ---------------------------------------------------
         true_robot.set_pose(*world.pose)
+        true_robot.set_visible(state.showTrueRobot)
         estimate.set(ekf.X[0], ekf.X[1])
         rays.set(world.pose, rho, phi, state.lmask,
                  state.use_range or state.use_bearing)

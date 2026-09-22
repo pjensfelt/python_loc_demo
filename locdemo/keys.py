@@ -28,7 +28,7 @@ _COMMON_HELP = """
  0          w = 0   enter force an update   <     decrease selected
  1..4  toggle       g  Gaussian overlay     l     zero bias (this row)
        landmark     x  extero. noise on/off L     zero bias (all rows)
- h     this help
+ h     this help    t  true robot on/off
  q     quit"""
 
 _EKF_ONLY = """
@@ -36,7 +36,7 @@ _EKF_ONLY = """
 
 _PF_ONLY = """
                     c  colour by weight     n/N   fewer/more particles
-                    p  resampling on/off"""
+                    p  resampling on/off    o     resample once"""
 
 _SLAM_ONLY = """
                     s  superGPS fix (SLAM)"""
@@ -121,12 +121,16 @@ def make_handler(state: DemoState, params, fig=None, on_help=None, particles=Fal
             state.forceUpdate = True
         elif k == "s" and slam:
             state.superGPS = True
+        elif k == "o" and particles:
+            state.resampleOnce = True
 
         # ---- toggles -------------------------------------------------
         elif k == "g":
             state.dispGaussApprox = not state.dispGaussApprox
         elif k == "x":
             state.toggle_extero()
+        elif k == "t":
+            state.showTrueRobot = not state.showTrueRobot
         elif k == "c" and particles:
             state.coloredPts = not state.coloredPts
         elif k == "p" and particles:

@@ -22,7 +22,7 @@ def common_args(description, particles=False):
     ap.add_argument("--landmarks", default=None, metavar="1011",
                     help="which landmarks the filter may use, one digit each")
     if particles:
-        ap.add_argument("--particles", type=int, default=100,
+        ap.add_argument("--particles", type=int, default=10000,
                         help="initial number of particles")
         ap.add_argument("--resample", action="store_true",
                         help="start with resampling enabled")

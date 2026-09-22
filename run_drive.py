@@ -51,7 +51,7 @@ def main():
         true_robot = draw.RobotArtist(ax, params, color="k")
         odo_robot = draw.RobotArtist(ax, params, color="b") if args.mode == "uncertain" else None
         cloud = draw.ParticleArtist(ax, rng=rng) if args.mode == "montecarlo" else None
-        panel = draw.Panel(fig)
+        panel = draw.Panel(fig, flags=[("true robot", lambda s: s.showTrueRobot)])
         keys.connect(fig, state, params)
         if not args.snapshot:
             print(keys.HELP)
@@ -82,6 +82,7 @@ def main():
             return []
 
         true_robot.set_pose(*world.pose)
+        true_robot.set_visible(state.showTrueRobot)
         if odo_robot is not None:
             odo_robot.set_pose(X[0, 0], X[1, 0], X[2, 0])
         if cloud is not None:

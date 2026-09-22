@@ -39,7 +39,8 @@ def main():
         landmark_map = draw.LandmarkMapArtist(ax, color="r")
         rays = draw.RayArtist(ax)
         panel = draw.Panel(fig, flags=[("Gaussian", lambda s: s.dispGaussApprox),
-                                       ("extero", lambda s: not s.extero_off)])
+                                       ("extero", lambda s: not s.extero_off),
+                                       ("true robot", lambda s: s.showTrueRobot)])
         keys.connect(fig, state, params, particles=False, slam=True)
         if not args.snapshot:
             print(keys.help_text(particles=False, slam=True))
@@ -84,6 +85,7 @@ def main():
 
         # ---- drawing ---------------------------------------------------
         true_robot.set_pose(*world.pose)
+        true_robot.set_visible(state.showTrueRobot)
         estimate.set(slam.X[0], slam.X[1])
         # The rays are always-on live sensor feedback -- they reflect what
         # the sensor currently reads regardless of whether the filter uses

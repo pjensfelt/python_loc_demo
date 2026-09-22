@@ -36,7 +36,8 @@ for the key list at any time.
 | `>` / `<` | raise / lower it | `x` | modelled range/bearing noise off/on |
 | `l` / `L` | model := true, this row / all | `c` | colour particles by weight (PF only) |
 | `h` | key list | `p` | resampling on/off (PF only) |
-| `q` | quit | `n` / `N` | fewer / more particles (PF only) |
+| `q` | quit | `o` | resample once (PF only) |
+| `t` | true robot on/off | `n` / `N` | fewer / more particles (PF only) |
 | | | `s` | superGPS fix (SLAM only) |
 
 `run_ekf.py`, `run_pf.py` and `run_ekfslam.py` each only wire up (and list

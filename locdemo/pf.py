@@ -75,12 +75,16 @@ class ParticleFilter:
         self.w = np.full(newN, 1.0 / newN)
 
     # ------------------------------------------------------------------
+    def resample_now(self):
+        """Resample immediately, regardless of accumulated weight."""
+        idx = resample_stratified(self.w, self.N, self.rng)
+        self.X = self.X[:, idx]
+        self.w = np.full(self.N, 1.0 / self.N)
+
     def maybe_resample(self, state: DemoState):
         """Resample when the accumulated weight has decayed."""
         if state.resample and self.w.sum() < 0.5:
-            idx = resample_stratified(self.w, self.N, self.rng)
-            self.X = self.X[:, idx]
-            self.w = np.full(self.N, 1.0 / self.N)
+            self.resample_now()
             return True
         return False
 

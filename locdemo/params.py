@@ -195,14 +195,16 @@ class DemoState:
     forceUpdate: bool = False
     injectNoise: bool = False
     superGPS: bool = False
+    resampleOnce: bool = False
 
     # Which landmarks are in use
     lmask: np.ndarray = field(default_factory=lambda: np.ones(4, dtype=bool))
 
     # Display / filter options
-    dispGaussApprox: bool = True
+    dispGaussApprox: bool = False
     coloredPts: bool = True
     resample: bool = False
+    showTrueRobot: bool = True
 
     # Particle count
     n_idx: int = 0

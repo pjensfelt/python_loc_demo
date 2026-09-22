@@ -45,7 +45,8 @@ def main():
         panel = draw.Panel(fig, flags=[("Gaussian", lambda s: s.dispGaussApprox),
                                        ("colour", lambda s: s.coloredPts),
                                        ("resample", lambda s: s.resample),
-                                       ("extero", lambda s: not s.extero_off)])
+                                       ("extero", lambda s: not s.extero_off),
+                                       ("true robot", lambda s: s.showTrueRobot)])
         keys.connect(fig, state, params, particles=True)
         if not args.snapshot:
             print(keys.help_text(particles=True))
@@ -97,6 +98,10 @@ def main():
         if state.addDisturbance:
             world.disturb()
             state.addDisturbance = False
+        if state.resampleOnce:
+            pf.resample_now()
+            state.resampleOnce = False
+            changed = True
         if state.newN != pf.N:
             print(f"Resampling particle set, N={state.newN}")
             pf.set_size(state.newN)
@@ -108,6 +113,7 @@ def main():
         # ---- drawing ---------------------------------------------------
         particles.set(pf.X, pf.w, state.coloredPts)
         true_robot.set_pose(*world.pose)
+        true_robot.set_visible(state.showTrueRobot)
         rays.set(world.pose, rho, phi, state.lmask,
                  state.use_range or state.use_bearing)
 
