@@ -5,10 +5,43 @@ rather than being deleted and replotted from scratch -- which is what makes
 100k particles redraw at 10 Hz.
 """
 
+from itertools import accumulate
+
 import numpy as np
 from matplotlib.collections import LineCollection
+from matplotlib.colors import LinearSegmentedColormap
 
-from .params import Params, DemoState, TUNABLES, PARAM_ROWS, FIXED_MODEL_ROWS
+from .params import Params, DemoState, TUNABLES, PARAM_ROWS, FIRE_ONCE_ROWS, FIXED_MODEL_ROWS
+
+# --------------------------------------------------------------------------
+# Heading colour wheel
+# --------------------------------------------------------------------------
+#
+# Same construction as the colour wheel behind flow_to_rgb in
+# KTH-RPL/OpenSceneFlow (src/utils/mics.py), so a heading here and a flow
+# direction there read the same way: 0 rad (+x) is red, then
+# counterclockwise through yellow, green, cyan, blue, magenta and back to
+# red. Unlike that function this only ever encodes a direction (no
+# magnitude/confidence to fold into brightness), so it's just the wheel
+# itself used as a fixed, cyclic colormap over [0, 2*pi).
+_WHEEL_TRANSITIONS = (15, 6, 4, 11, 13, 6)
+
+
+def _make_colorwheel(transitions=_WHEEL_TRANSITIONS):
+    n = sum(transitions)
+    base_hues = map(np.array, ([255, 0, 0], [255, 255, 0], [0, 255, 0],
+                                [0, 255, 255], [0, 0, 255], [255, 0, 255], [255, 0, 0]))
+    wheel = np.zeros((n, 3))
+    hue_from = next(base_hues)
+    start = 0
+    for hue_to, end in zip(base_hues, accumulate(transitions)):
+        wheel[start:end] = np.linspace(hue_from, hue_to, end - start, endpoint=False)
+        hue_from = hue_to
+        start = end
+    return np.vstack([wheel, [[255, 0, 0]]]) / 255.0  # close the loop back to red
+
+
+HEADING_CMAP = LinearSegmentedColormap.from_list("direction_wheel", _make_colorwheel(), N=256)
 
 
 def robot_outline(x, y, a, length, width):
@@ -112,12 +145,17 @@ class RayArtist:
 
 
 class ParticleArtist:
-    """Particle cloud, optionally coloured by weight.
+    """Particle cloud, in one of three modes: plain, coloured by weight, or
+    coloured by heading.
 
     Above `max_draw` particles only a random subset is drawn; the filter still
-    uses all of them.  The colour scale is rescaled every frame -- essential
-    for the likelihood visualisation, where the absolute weights are
-    meaningless but their relative size is not.
+    uses all of them.  The weight colour scale is rescaled every frame --
+    essential for the likelihood visualisation, where the absolute weights
+    are meaningless but their relative size is not. The heading colour scale
+    is the opposite: fixed at [0, 2*pi) always, using HEADING_CMAP, so a given
+    colour means the same direction on every frame and every demo run --
+    exactly what you want when comparing "did the spread follow the true
+    heading" across frames instead of reading relative weight.
 
     Which *column indices* make up that subset is only re-rolled when the
     particle count changes (a resize), not on every frame. predict/update/
@@ -134,14 +172,26 @@ class ParticleArtist:
     def __init__(self, ax, max_draw=20000, rng=None):
         self.max_draw = max_draw
         self.rng = np.random.default_rng() if rng is None else rng
-        self.scat = ax.scatter([], [], s=4, c=[], cmap="viridis", zorder=2)
+        # cmap is set after construction, not passed to scatter() directly --
+        # with no data yet, matplotlib warns that it's ignoring cmap (it
+        # isn't; set_array() below still finds it) and passing it this way
+        # sidesteps the spurious warning entirely.
+        self.scat = ax.scatter([], [], s=4, zorder=2)
+        self.scat.set_cmap("viridis")
         (self.plain,) = ax.plot([], [], "b.", ms=2, zorder=2)
         self._sel = None
         self._n = None
 
-    def set(self, X, w, colored):
+    def set(self, X, w, mode, draw_all=False):
+        """mode is 'plain', 'weight' or 'heading'.
+
+        `draw_all` bypasses the max_draw subsampling entirely -- slow at a
+        million particles, but some demos (e.g. watching every particle
+        survive or die at once during resampling) are hard to read from a
+        20000-particle subset.
+        """
         n = X.shape[1]
-        if n > self.max_draw:
+        if not draw_all and n > self.max_draw:
             if self._sel is None or self._n != n:
                 self._sel = self.rng.choice(n, self.max_draw, replace=False)
                 self._n = n
@@ -149,15 +199,21 @@ class ParticleArtist:
         else:
             self._sel = None
             self._n = n
-        self.scat.set_visible(colored)
-        self.plain.set_visible(not colored)
-        if colored:
-            self.scat.set_offsets(np.column_stack([X[0], X[1]]))
+        self.scat.set_visible(mode != "plain")
+        self.plain.set_visible(mode == "plain")
+        if mode == "plain":
+            self.plain.set_data(X[0], X[1])
+            return
+        self.scat.set_offsets(np.column_stack([X[0], X[1]]))
+        if mode == "heading":
+            self.scat.set_cmap(HEADING_CMAP)
+            self.scat.set_array(np.mod(X[2], 2 * np.pi))
+            self.scat.set_clim(0.0, 2 * np.pi)
+        else:  # "weight"
+            self.scat.set_cmap("viridis")
             self.scat.set_array(w)
             lo, hi = float(w.min()), float(w.max())
             self.scat.set_clim(lo, hi if hi > lo else lo + 1e-12)
-        else:
-            self.plain.set_data(X[0], X[1])
 
     @property
     def artists(self):
@@ -276,10 +332,25 @@ class Panel:
             label = next(t for t in TUNABLES if t.name == name).label
             rows.append(f"{label:>7} {cells[0]}{cells[1]}")
 
-        # Wheel r/B: model is fixed on Params (never selectable, no
-        # brackets), only the true hardware value is an editable ladder
-        # entry.
-        rows.append("        (odometry calibration)")
+        # GPS/compass: fire-once sensors (keys 'G'/'y'), not continuous
+        # measurements -- whether one happens at all is already controlled
+        # by pressing the key, so unlike the rows above there is no "off"
+        # state to select here.
+        rows.append("        (fire-once sensors)")
+        for name in FIRE_ONCE_ROWS:
+            cells = []
+            for column in ("true", "model"):
+                t = next(t for t in TUNABLES if t.key == (column, name))
+                sel = TUNABLES.index(t) == state.cursor
+                txt = t.format(state.value(column, name))
+                cells.append(("[%s]" if sel else " %s ") % txt.center(7))
+            label = next(t for t in TUNABLES if t.name == name).label
+            rows.append(f"{label:>7} {cells[0]}{cells[1]}")
+
+        # Wheel r/B and compass bias: model is fixed on Params (never
+        # selectable, no brackets), only the true hardware value is an
+        # editable ladder entry.
+        rows.append("        (fixed bias)")
         for name in FIXED_MODEL_ROWS:
             t = next(t for t in TUNABLES if t.key == ("true", name))
             sel = TUNABLES.index(t) == state.cursor
@@ -296,7 +367,8 @@ class Panel:
             f"landmarks: {lm}",
         ]
         for label, value in self.flags:
-            rows.append(f"{label}: {'on' if value(state) else 'off'}")
+            v = value(state)
+            rows.append(f"{label}: {('on' if v else 'off') if isinstance(v, bool) else v}")
         if extra:
             rows += ["", extra]
         rows += ["", "press 'h' for keys"]

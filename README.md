@@ -34,11 +34,13 @@ for the key list at any time.
 | `1`…`4` | use landmark 1…4 | `enter` | force a measurement update |
 | `tab` / `shift-tab` | select a parameter | `g` | Gaussian overlay on/off |
 | `>` / `<` | raise / lower it | `x` | modelled range/bearing noise off/on |
-| `l` / `L` | model := true, this row / all | `c` | colour particles by weight (PF only) |
-| `h` | key list | `p` | resampling on/off (PF only) |
-| `q` | quit | `o` | resample once (PF only) |
-| `t` | true robot on/off | `n` / `N` | fewer / more particles (PF only) |
+| `l` / `L` | model := true, this row / all | `c` | cycle particle colour: weight/heading/plain (PF only) |
+| `h` | key list | `A` | draw all particles, not just 20000 (PF only) |
+| `q` | quit | `p` | resampling on/off (PF only) |
+| `t` | true robot on/off | `o` | resample once (PF only) |
+| `S` | screenshot (2 PNGs, in `snapshots/`) | `n` / `N` | fewer / more particles (PF only) |
 | | | `s` | superGPS fix (SLAM only) |
+| | | `G` / `y` | GPS / compass fix, once (EKF/PF only) |
 
 `run_ekf.py`, `run_pf.py` and `run_ekfslam.py` each only wire up (and list
 with `h`) the keys that do something in that program, so the PF-only,
@@ -60,6 +62,9 @@ sig_rda    0       0.1      rotation noise, proportional to the turn
  sig_rd    0       0.1      rotation noise, proportional to distance driven
 sig_rho   0.1m     off      range measurement noise
 sig_phi    1°      off      bearing measurement noise
+        (fire-once sensors)
+sig_gps    1m       1m      GPS fix noise (one-shot, `G`)
+sig_cmp    5°       5°      compass fix noise (one-shot, `y`)
 ```
 
 * The **TRUE** column is what the simulated world does: how much the robot
@@ -81,25 +86,45 @@ covariance, stop listening to measurements and diverge. A filter whose model is
 *larger* than the truth is under-confident: it survives, but throws away
 precision. Try `l` on a row to see the matched case, then detune it.
 
+`sig_gps`/`sig_cmp` are different in kind from the rows above: `G`/`y` are
+one-shot fixes (see below), so whether one is ever applied is already fully
+controlled by *pressing the key* -- there is no separate `off` state to also
+set, and the model column can never go below its smallest positive rung
+(a zero model sigma is a divide-by-zero the moment a fix doesn't land exactly
+on the prediction).
+
+### GPS and compass: one-shot absolute fixes
+
+`G` and `y` inject a single absolute position or heading measurement, once,
+whenever pressed -- unlike range/bearing, which are folded into every step.
+Each draws its own noisy reading from the TRUE row (plus, for the compass,
+the fixed `cmp_bias` below) and fuses it using the MODEL row's sigma. Good
+for demoing a single precise correction: disturb the true pose (`d`), then
+press `G` and watch the estimate jump most of the way there in one step
+instead of converging gradually over many landmark updates.
+
 ### Odometry calibration: a deterministic bias
 
-Two more rows sit below the noise table:
+Three more rows sit below the noise table:
 
 ```
-        (odometry calibration)
+        (fixed bias)
       r  0.05m    0.05m       wheel radius the odometry assumes
       B  0.20m    0.20m       wheelbase the odometry assumes
+cmp_bias    0°       0°       compass hard-iron-style bias
 ```
 
-These are different in kind from everything above them: `r` and `B` are
-*fixed* on the TRUE side (real hardware isn't something you dial in mid-run)
-and editable only on the MODEL side, and they represent a bias, not noise.
-Real odometry only ever sees wheel-encoder rotation; it has to *assume* a
-wheel radius and wheelbase to convert that into distance and turning. Get
-either assumption wrong and every single step is off in the same direction —
-unlike the noise above, this never averages out over a long drive, which is
-exactly why it can be so much more damaging in practice than it looks like it
-should be.
+These are different in kind from everything above them: `r`, `B` and
+`cmp_bias` are *fixed* on the TRUE side (real hardware isn't something you
+dial in mid-run) and editable only on the MODEL side, and they represent a
+bias, not noise. Real odometry only ever sees wheel-encoder rotation; it has
+to *assume* a wheel radius and wheelbase to convert that into distance and
+turning. Get either assumption wrong and every single step is off in the
+same direction — unlike the noise above, this never averages out over a long
+drive, which is exactly why it can be so much more damaging in practice than
+it looks like it should be. A compass is the same story: real hardware
+(hard-iron interference, mounting misalignment) reads a fixed offset from
+true north every time, not a fresh random error each fix.
 
 A wrong `r` scales the odometry's believed speed *and* turn rate equally,
 since both wheels' rotation-to-distance conversion is off by the same
@@ -171,13 +196,14 @@ the EKF try to represent that with a Gaussian.
 ## MCL — Monte Carlo Localization
 
 Here the distribution is a set of particles, each with a state and a weight.
-`c` toggles the colour coding by weight, `n` and `N` change the particle count
-(100 / 1000 / 10000 / 100000 / 1000000). The filter itself is vectorised and
-comfortably keeps up at a million particles; what doesn't scale is drawing
-them, so the display always plots a fixed random subset (20000 by default)
-however big `N` is. Which particles are in that subset is only re-rolled when
-the set actually changes (a predict/update/resample), not on every redraw, so
-a stationary cloud stays put on screen instead of looking like it's boiling.
+`c` cycles the colour coding (weight / heading / plain), and `n` and `N`
+change the particle count (100 / 1000 / 10000 / 100000). What doesn't scale
+is drawing them, so the display always plots a fixed random subset (20000 by
+default) however big `N` is -- press `A` to draw every particle instead when
+a demo needs to show the whole cloud, at the cost of a slower redraw. Which
+particles are in the 20000-subset is only re-rolled when the set actually
+changes (a predict/update/resample), not on every redraw, so a stationary
+cloud stays put on screen instead of looking like it's boiling.
 
 ### Pure prediction
 

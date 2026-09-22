@@ -36,12 +36,12 @@ def main():
         estimate = draw.PointArtist(ax, color="b")
         gauss = draw.GaussArtist(ax, color="b")
         rays = draw.RayArtist(ax)
-        panel = draw.Panel(fig, flags=[("Gaussian", lambda s: s.dispGaussApprox),
+        panel = draw.Panel(fig, flags=[("95%-Gaussian", lambda s: s.dispGaussApprox),
                                        ("extero", lambda s: not s.extero_off),
                                        ("true robot", lambda s: s.showTrueRobot)])
-        keys.connect(fig, state, params, particles=False)
+        keys.connect(fig, state, params, ax=ax, demo="ekf", particles=False, absolute=True)
         if not args.snapshot:
-            print(keys.help_text(particles=False))
+            print(keys.help_text(particles=False, absolute=True))
 
     def step(_frame=0):
         # ---- simulation ------------------------------------------------
@@ -72,6 +72,14 @@ def main():
         if state.addDisturbance:
             world.disturb()
             state.addDisturbance = False
+        if state.injectGPS:
+            xg, yg = world.measure_gps(state)
+            ekf.gps_update(xg, yg, state.zGpsStd)
+            state.injectGPS = False
+        if state.injectCompass:
+            a_meas = world.measure_compass(state)
+            ekf.compass_update(a_meas, state.zCompassStd)
+            state.injectCompass = False
 
         if fig is None:
             return []

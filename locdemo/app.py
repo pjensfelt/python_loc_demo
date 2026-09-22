@@ -1,7 +1,38 @@
 """Shared plumbing for the demo programs: argument parsing and the main loop."""
 
 import argparse
+import time
+from pathlib import Path
+
 import numpy as np
+
+# Where 'S' screenshots land, so repeated presses don't clutter the working
+# directory with loose PNGs next to the source files.
+SNAPSHOT_DIR = Path("snapshots")
+
+
+def save_screenshot(fig, ax, demo):
+    """Write two PNGs of the current window into SNAPSHOT_DIR: the full
+    window, and just the plot axes (including its ticks/labels, but not the
+    side panel).
+
+    Named snap_<minute-timestamp>_<demo>_win.png / _plot.png, e.g.
+    snapshots/snap_202609221833_pf_win.png -- timestamped to minute
+    resolution so repeated presses within a demo run sort together and
+    don't collide.
+    """
+    SNAPSHOT_DIR.mkdir(exist_ok=True)
+    stamp = time.strftime("%Y%m%d%H%M")
+    win_path = SNAPSHOT_DIR / f"snap_{stamp}_{demo}_win.png"
+    plot_path = SNAPSHOT_DIR / f"snap_{stamp}_{demo}_plot.png"
+    fig.savefig(win_path, dpi=150)
+
+    fig.canvas.draw()
+    bbox = ax.get_tightbbox(fig.canvas.get_renderer()).transformed(fig.dpi_scale_trans.inverted())
+    fig.savefig(plot_path, dpi=150, bbox_inches=bbox)
+
+    print(f"wrote {win_path}\nwrote {plot_path}")
+    return win_path, plot_path
 
 
 def common_args(description, particles=False):

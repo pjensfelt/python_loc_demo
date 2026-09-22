@@ -92,11 +92,22 @@ class EKFLocalizer:
 
         if not innov:
             return
+        self._apply_update(np.array(H), np.diag(R), np.array(innov))
 
-        H = np.array(H)
-        R = np.diag(R)
-        innov = np.array(innov)
+    def gps_update(self, xg, yg, sig):
+        """Fuse a single absolute position fix (GPS-like)."""
+        H = np.array([[1.0, 0.0, 0.0],
+                      [0.0, 1.0, 0.0]])
+        innov = np.array([xg - self.X[0], yg - self.X[1]])
+        self._apply_update(H, sig ** 2 * np.eye(2), innov)
 
+    def compass_update(self, a_meas, sig):
+        """Fuse a single absolute heading fix (compass-like)."""
+        H = np.array([[0.0, 0.0, 1.0]])
+        innov = np.array([models.wrap_angle(a_meas - self.X[2])])
+        self._apply_update(H, np.array([[sig ** 2]]), innov)
+
+    def _apply_update(self, H, R, innov):
         S = H @ self.P @ H.T + R
         K = self.P @ H.T @ np.linalg.inv(S)
         self.X = self.X + K @ innov

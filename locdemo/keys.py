@@ -10,6 +10,7 @@ import time
 import numpy as np
 import matplotlib as mpl
 
+from . import app
 from .params import DemoState, N_LADDER, V_STEP, V_MAX, W_STEP, W_MAX, TUNABLES
 
 # Below this gap between two presses of the *same* key, the second one is
@@ -18,6 +19,13 @@ from .params import DemoState, N_LADDER, V_STEP, V_MAX, W_STEP, W_MAX, TUNABLES
 # stuck key event that keeps re-firing after you've let go, which otherwise
 # looks exactly like the filter "updating on its own".
 _MIN_REPEAT_INTERVAL = 0.15
+
+# One key cycles both particle-colouring modes, rather than two independent
+# toggles -- "coloured by weight" and "coloured by heading" can never both be
+# true on screen at once, so two separate keys just meant pressing one
+# silently did nothing while the other mode was active, with no indication
+# why.
+_PT_COLOR_MODES = ("weight", "heading")
 
 _COMMON_HELP = """
  driving            filter / display        parameters
@@ -29,25 +37,33 @@ _COMMON_HELP = """
  1..4  toggle       g  Gaussian overlay     l     zero bias (this row)
        landmark     x  extero. noise on/off L     zero bias (all rows)
  h     this help    t  true robot on/off
- q     quit"""
+ q     quit         S  screenshot (2 pngs)"""
 
 _EKF_ONLY = """
                     i  inject noise (EKF/SLAM)"""
 
 _PF_ONLY = """
-                    c  colour by weight     n/N   fewer/more particles
-                    p  resampling on/off    o     resample once"""
+                    c  cycle colour mode    n/N   fewer/more particles
+                       (weight/heading)     p     resampling on/off
+                    A  draw all particles   o     resample once
+                       (slow at high N)"""
 
 _SLAM_ONLY = """
                     s  superGPS fix (SLAM)"""
 
+_ABSOLUTE_ONLY = """
+                    G  GPS fix (once)         y  compass fix (once)"""
 
-def help_text(particles: bool = False, slam: bool = False) -> str:
+
+def help_text(particles: bool = False, slam: bool = False, absolute: bool = False) -> str:
     """The key list for the current demo; PF, EKF and SLAM each have a few
     keys the others don't, so they get their own copy of the mode-specific
     line. SLAM shares 'i' with EKF (both are Kalman filters) and adds 's'.
+    `absolute` adds the GPS/compass one-shot fixes (EKF and PF, not SLAM,
+    which already has its own near-perfect 's' fix for a different purpose).
     """
     extra = _PF_ONLY if particles else (_EKF_ONLY + (_SLAM_ONLY if slam else ""))
+    extra += _ABSOLUTE_ONLY if absolute else ""
     return _COMMON_HELP + extra + "\n"
 
 
@@ -67,15 +83,22 @@ def clear_default_keymap():
             mpl.rcParams[k] = []
 
 
-def make_handler(state: DemoState, params, fig=None, on_help=None, particles=False, slam=False):
+def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_help=None,
+                  particles=False, slam=False, absolute=False):
     """Return a matplotlib key_press_event callback bound to `state`.
 
     `params` is needed for 'l'/'L': the model value of a FIXED_MODEL_ROWS
     tunable (wheel r/B) lives on Params, not on a ladder in `state`.
 
-    `particles` selects which of the PF-only / EKF-only keys are live, and
-    `slam` additionally enables the superGPS key, so a filter's controls
-    don't show up as active (or in the help) when they wouldn't do anything.
+    `ax` is only needed for 'S' (screenshot); passing None just disables
+    that key instead of erroring, so callers that don't have an axes yet
+    (headless runs) don't need to special-case anything. `demo` names the
+    calling program (e.g. "pf", "ekf") for the screenshot filename.
+
+    `particles` selects which of the PF-only / EKF-only keys are live,
+    `slam` additionally enables the superGPS key, and `absolute` enables the
+    GPS/compass one-shot fixes -- EKF and PF, not SLAM, which already has
+    its own near-perfect 's' fix serving a different demo.
     """
 
     def clamp(value, limit):
@@ -123,6 +146,10 @@ def make_handler(state: DemoState, params, fig=None, on_help=None, particles=Fal
             state.superGPS = True
         elif k == "o" and particles:
             state.resampleOnce = True
+        elif k == "G" and absolute:
+            state.injectGPS = True
+        elif k == "y" and absolute:
+            state.injectCompass = True
 
         # ---- toggles -------------------------------------------------
         elif k == "g":
@@ -132,7 +159,10 @@ def make_handler(state: DemoState, params, fig=None, on_help=None, particles=Fal
         elif k == "t":
             state.showTrueRobot = not state.showTrueRobot
         elif k == "c" and particles:
-            state.coloredPts = not state.coloredPts
+            i = (_PT_COLOR_MODES.index(state.ptColorMode) + 1) % len(_PT_COLOR_MODES)
+            state.ptColorMode = _PT_COLOR_MODES[i]
+        elif k == "A" and particles:
+            state.drawAllParticles = not state.drawAllParticles
         elif k == "p" and particles:
             state.resample = not state.resample
         elif k in "1234":
@@ -171,9 +201,11 @@ def make_handler(state: DemoState, params, fig=None, on_help=None, particles=Fal
 
         # ---- meta -----------------------------------------------------
         elif k == "h":
-            print(help_text(particles, slam))
+            print(help_text(particles, slam, absolute))
             if on_help is not None:
                 on_help()
+        elif k == "S" and ax is not None:
+            app.save_screenshot(fig, ax, demo)
         elif k == "q":
             state.running = False
             if fig is not None:
@@ -183,7 +215,9 @@ def make_handler(state: DemoState, params, fig=None, on_help=None, particles=Fal
     return handler
 
 
-def connect(fig, state: DemoState, params, on_help=None, particles=False, slam=False):
+def connect(fig, state: DemoState, params, ax=None, demo="demo", on_help=None,
+            particles=False, slam=False, absolute=False):
     clear_default_keymap()
     fig.canvas.mpl_connect("key_press_event",
-                           make_handler(state, params, fig, on_help, particles, slam))
+                           make_handler(state, params, fig, ax, demo, on_help,
+                                        particles, slam, absolute))

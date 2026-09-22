@@ -38,10 +38,10 @@ def main():
         gauss = draw.GaussArtist(ax, color="b")
         landmark_map = draw.LandmarkMapArtist(ax, color="r")
         rays = draw.RayArtist(ax)
-        panel = draw.Panel(fig, flags=[("Gaussian", lambda s: s.dispGaussApprox),
+        panel = draw.Panel(fig, flags=[("95%-Gaussian", lambda s: s.dispGaussApprox),
                                        ("extero", lambda s: not s.extero_off),
                                        ("true robot", lambda s: s.showTrueRobot)])
-        keys.connect(fig, state, params, particles=False, slam=True)
+        keys.connect(fig, state, params, ax=ax, demo="ekfslam", particles=False, slam=True)
         if not args.snapshot:
             print(keys.help_text(particles=False, slam=True))
 

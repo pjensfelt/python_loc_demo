@@ -55,6 +55,24 @@ class World:
         phi = phi + state.value("true", "phi") * self.rng.standard_normal(self.p.NL)
         return rho, phi
 
+    def measure_gps(self, state: DemoState):
+        """A single noisy absolute position fix."""
+        sig = state.value("true", "gps")
+        return (self.xt + sig * self.rng.standard_normal(),
+                self.yt + sig * self.rng.standard_normal())
+
+    def measure_compass(self, state: DemoState):
+        """A single noisy absolute heading fix.
+
+        Corrupted by the compass's own fixed bias (true.compass_bias) on top
+        of the per-reading noise -- unlike the noise, a real compass's bias
+        (e.g. hard-iron interference) doesn't average out no matter how many
+        times you fix, since it's the same every time.
+        """
+        sig = state.value("true", "compass")
+        bias = state.value("true", "compass_bias")
+        return models.wrap_angle(self.at + bias + sig * self.rng.standard_normal())
+
     def disturb(self):
         """Teleport the true robot a little, to break the filter's tracking.
 

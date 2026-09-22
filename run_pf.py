@@ -42,14 +42,15 @@ def main():
         true_robot = draw.RobotArtist(ax, params, color="k")
         gauss = draw.GaussArtist(ax, color="r")
         rays = draw.RayArtist(ax)
-        panel = draw.Panel(fig, flags=[("Gaussian", lambda s: s.dispGaussApprox),
-                                       ("colour", lambda s: s.coloredPts),
+        panel = draw.Panel(fig, flags=[("95%-Gaussian", lambda s: s.dispGaussApprox),
+                                       ("colour", lambda s: s.ptColorMode),
+                                       ("draw all particles", lambda s: s.drawAllParticles),
                                        ("resample", lambda s: s.resample),
                                        ("extero", lambda s: not s.extero_off),
                                        ("true robot", lambda s: s.showTrueRobot)])
-        keys.connect(fig, state, params, particles=True)
+        keys.connect(fig, state, params, ax=ax, demo="pf", particles=True, absolute=True)
         if not args.snapshot:
-            print(keys.help_text(particles=True))
+            print(keys.help_text(particles=True, absolute=True))
 
     warned_tiny = [False]
     cached_approx = [None]
@@ -106,12 +107,26 @@ def main():
             print(f"Resampling particle set, N={state.newN}")
             pf.set_size(state.newN)
             changed = True
+        if state.injectGPS:
+            xg, yg = world.measure_gps(state)
+            pf.gps_update(xg, yg, state.zGpsStd)
+            # Reweight only -- no resample here. Resampling happens the same
+            # way it does for every other measurement: via maybe_resample()
+            # above, next time you press enter or drive (see the top of this
+            # function), not as a side effect of firing the GPS itself.
+            changed = True
+            state.injectGPS = False
+        if state.injectCompass:
+            a_meas = world.measure_compass(state)
+            pf.compass_update(a_meas, state.zCompassStd)
+            changed = True
+            state.injectCompass = False
 
         if fig is None:
             return []
 
         # ---- drawing ---------------------------------------------------
-        particles.set(pf.X, pf.w, state.coloredPts)
+        particles.set(pf.X, pf.w, state.ptColorMode, draw_all=state.drawAllParticles)
         true_robot.set_pose(*world.pose)
         true_robot.set_visible(state.showTrueRobot)
         rays.set(world.pose, rho, phi, state.lmask,

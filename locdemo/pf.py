@@ -122,6 +122,15 @@ class ParticleFilter:
                 dPhi = models.wrap_angle(phi[l] - zPhi)
                 self.w *= np.exp(-0.5 * (dPhi / state.zPhiStd) ** 2)
 
+    def gps_update(self, xg, yg, sig):
+        """Reweight by a single absolute position fix (GPS-like)."""
+        self.w *= np.exp(-0.5 * (((xg - self.X[0]) / sig) ** 2 + ((yg - self.X[1]) / sig) ** 2))
+
+    def compass_update(self, a_meas, sig):
+        """Reweight by a single absolute heading fix (compass-like)."""
+        dA = models.wrap_angle(a_meas - self.X[2])
+        self.w *= np.exp(-0.5 * (dA / sig) ** 2)
+
     def weights_are_tiny(self):
         return self.w.min() < 1e-200
 
