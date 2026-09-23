@@ -16,13 +16,14 @@ def save_screenshot(fig, ax, demo):
     window, and just the plot axes (including its ticks/labels, but not the
     side panel).
 
-    Named snap_<minute-timestamp>_<demo>_win.png / _plot.png, e.g.
-    snapshots/snap_202609221833_pf_win.png -- timestamped to minute
-    resolution so repeated presses within a demo run sort together and
-    don't collide.
+    Named snap_<second-timestamp>_<demo>_win.png / _plot.png, e.g.
+    snapshots/snap_20260922183305_pf_win.png -- timestamped to second
+    resolution so repeated presses within a demo run sort together without
+    colliding (minute resolution silently overwrote any second `S` press
+    within the same minute).
     """
     SNAPSHOT_DIR.mkdir(exist_ok=True)
-    stamp = time.strftime("%Y%m%d%H%M")
+    stamp = time.strftime("%Y%m%d%H%M%S")
     win_path = SNAPSHOT_DIR / f"snap_{stamp}_{demo}_win.png"
     plot_path = SNAPSHOT_DIR / f"snap_{stamp}_{demo}_plot.png"
     fig.savefig(win_path, dpi=150)

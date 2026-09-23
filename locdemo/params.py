@@ -55,6 +55,15 @@ class Params:
     # from this.
     compass_bias: float = 0.0
 
+    # Pose-graph SLAM (run_pgo.py): a new pose node (and a landmark-edge for
+    # every landmark currently in range -- see the maxrange tunable) is
+    # added every pgo_node_spacing metres of true distance driven. This is a
+    # structural choice about the graph itself -- how finely it samples the
+    # path -- not a noise source, so unlike sig_td etc. there's no
+    # true/model pair, just one fixed value, the same kind of constant dT
+    # already is.
+    pgo_node_spacing: float = 1.0
+
     # Landmark positions
     xL: np.ndarray = field(default_factory=lambda: np.array([-0.5, 10.5, 10.5, -0.5]))
     yL: np.ndarray = field(default_factory=lambda: np.array([-0.5, -0.5, 10.5, 10.5]))
@@ -100,6 +109,28 @@ _MOTION = [0.0, 0.01, 0.02, 0.05, 0.1, 0.15, 0.25, 0.5, 1.0, 2.0, 5.0]
 # column cannot, but 0.0 gives a perfect sensor.
 _RHO_TRUE = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0]
 _RHO_MODEL = [-1.0] + _RHO_TRUE[1:]
+
+# Maximum sensing distance [m]: a landmark further than this from the robot
+# is entirely outside sensor range -- no reading of any kind, not merely a
+# noisy one, which is why this is a separate row from sig_rho/sig_phi
+# (their noise) rather than folded into either of them. Deliberately named
+# "maxrange" rather than reusing "range": sig_rho is already the *range
+# measurement*'s own row, and calling this one "range" too would make the
+# panel's two adjacent rows nearly indistinguishable.
+#
+# Top rung is a genuine infinity, not just a large-but-finite stand-in for
+# it, so out of the box every landmark is visible from everywhere -- exactly
+# today's behaviour before this row existed. Lowering it is what makes the
+# limited-visibility experiments possible (e.g. only re-seeing a landmark
+# once you're actually back near it, for a real loop closure).
+#
+# Just one value, not a true/model pair: unlike sensor *noise*, where "how
+# noisy is it really" and "how noisy does the filter assume it is" are
+# usefully different questions, "how far can the sensor physically see" is
+# one fact about the sensor, not a belief that could plausibly be modelled
+# as different from the truth -- so it lives in SINGLE_ROWS, not
+# PARAM_ROWS, and there's no _MAXRANGE_MODEL.
+_MAXRANGE_LADDER = [1.0, 3.0, 5.0, 7.0, 10.0, 13.0, np.inf]
 
 # Bearing [rad], laddered in whole degrees.
 _PHI_DEG = [0.0, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0]
@@ -172,6 +203,8 @@ class Tunable:
     def format(self, value: float) -> str:
         if value < 0:
             return "off"
+        if np.isinf(value):
+            return "∞"
         if self.unit == "deg":
             return f"{np.rad2deg(value):.3g}°"
         if self.unit == "m":
@@ -181,15 +214,19 @@ class Tunable:
 
 # Display order is also the order the selection cursor walks through.
 TUNABLES: List[Tunable] = [
-    # motion noise, proportional to distance travelled
+    # motion noise, proportional to distance travelled. Same default (0.25)
+    # in every demo -- EKF, PF, EKF-SLAM and PGO all start from the same
+    # motion-model belief, so any difference you see between them comes from
+    # how each one handles that noise, not from starting with a different
+    # noise level.
     Tunable("td", "true", "sig_td", _MOTION, _MOTION.index(0.0)),
-    Tunable("td", "model", "sig_td", _MOTION, _MOTION.index(0.1)),
+    Tunable("td", "model", "sig_td", _MOTION, _MOTION.index(0.25)),
     # rotation noise, proportional to the heading change
     Tunable("rda", "true", "sig_rda", _MOTION, _MOTION.index(0.0)),
-    Tunable("rda", "model", "sig_rda", _MOTION, _MOTION.index(0.1)),
+    Tunable("rda", "model", "sig_rda", _MOTION, _MOTION.index(0.25)),
     # rotation noise, proportional to distance travelled
     Tunable("rd", "true", "sig_rd", _MOTION, _MOTION.index(0.0)),
-    Tunable("rd", "model", "sig_rd", _MOTION, _MOTION.index(0.1)),
+    Tunable("rd", "model", "sig_rd", _MOTION, _MOTION.index(0.25)),
     # range
     Tunable("rho", "true", "sig_rho", _RHO_TRUE, _RHO_TRUE.index(0.1), "m"),
     Tunable("rho", "model", "sig_rho", _RHO_MODEL, 0, "m"),
@@ -214,6 +251,12 @@ TUNABLES: List[Tunable] = [
     Tunable("r", "true", "r", _R_LADDER, _R_DEFAULT, "m"),
     Tunable("B", "true", "B", _B_LADDER, _B_DEFAULT, "m"),
     Tunable("compass_bias", "true", "cmp_bias", _COMPASS_BIAS_LADDER, _COMPASS_BIAS_DEFAULT, "deg"),
+    # maximum sensing distance -- see _MAXRANGE_LADDER above and SINGLE_ROWS
+    # below. Placed last in this list, matching where Panel.update actually
+    # draws it (after the fixed-bias rows): TUNABLES order is also tab's
+    # visiting order, so a row placed anywhere else here would make tab
+    # jump to a screen position that isn't adjacent to wherever it just was.
+    Tunable("maxrange", "true", "max_rng", _MAXRANGE_LADDER, len(_MAXRANGE_LADDER) - 1, "m"),
 ]
 
 TUNABLE_BY_KEY = {t.key: t for t in TUNABLES}
@@ -230,6 +273,14 @@ FIRE_ONCE_ROWS = ["gps", "compass"]
 # value for one of these must read it off Params instead of calling
 # state.value("model", ...).
 FIXED_MODEL_ROWS = ["r", "B", "compass_bias"]
+
+# Rows with only a "true" column at all -- not even a fixed Params constant
+# for a second one, unlike FIXED_MODEL_ROWS. For a quantity where "true" vs
+# "model" wouldn't be two different questions in the first place (e.g.
+# maxrange: how far the sensor can physically see, not a noise level that's
+# meaningful to get wrong on purpose), a whole second column would just be
+# a confusing no-op.
+SINGLE_ROWS = ["maxrange"]
 
 # Particle counts offered by the 'n' / 'N' keys (was a popup menu).  The
 # filter math itself is vectorised and comfortably handles far more than
@@ -265,6 +316,7 @@ class DemoState:
     resampleOnce: bool = False
     injectGPS: bool = False
     injectCompass: bool = False
+    optimizePGO: bool = False
 
     # Which landmarks are in use
     lmask: np.ndarray = field(default_factory=lambda: np.ones(4, dtype=bool))
@@ -317,9 +369,13 @@ class DemoState:
 
         For an ordinary row that's model := true. For a FIXED_MODEL_ROWS row
         (wheel r/B) the model is the fixed constant on Params, so it's the
-        editable true side that gets reset to match it instead.
+        editable true side that gets reset to match it instead. A
+        SINGLE_ROWS row (maxrange) has only the one column to begin with,
+        so there's nothing to link -- a no-op, not an error.
         """
         name = self.selected.name
+        if name in SINGLE_ROWS:
+            return
         if name in FIXED_MODEL_ROWS:
             self.set_value("true", name, getattr(params, name))
         else:
@@ -374,6 +430,10 @@ class DemoState:
     @property
     def zCompassStd(self) -> float:
         return self.value("model", "compass")
+
+    @property
+    def maxRange(self) -> float:
+        return self.value("true", "maxrange")
 
     @property
     def moving(self) -> bool:

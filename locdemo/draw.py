@@ -12,7 +12,8 @@ import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.colors import LinearSegmentedColormap
 
-from .params import Params, DemoState, TUNABLES, PARAM_ROWS, FIRE_ONCE_ROWS, FIXED_MODEL_ROWS
+from .params import (Params, DemoState, TUNABLES, PARAM_ROWS, FIRE_ONCE_ROWS,
+                     FIXED_MODEL_ROWS, SINGLE_ROWS)
 
 # --------------------------------------------------------------------------
 # Heading colour wheel
@@ -401,6 +402,16 @@ class Panel:
             true_cell = ("[%s]" if sel else " %s ") % true_txt.center(7)
             model_cell = " %s " % t.format(getattr(params, name)).center(7)
             rows.append(f"{t.label:>7} {true_cell}{model_cell}")
+
+        # Rows with just the one column -- no "model" cell at all, unlike
+        # every row above (even FIXED_MODEL_ROWS still shows a second,
+        # read-only cell).
+        for name in SINGLE_ROWS:
+            t = next(t for t in TUNABLES if t.key == ("true", name))
+            sel = TUNABLES.index(t) == state.cursor
+            txt = t.format(state.value("true", name))
+            cell = ("[%s]" if sel else " %s ") % txt.center(7)
+            rows.append(f"{t.label:>7} {cell}")
 
         lm = " ".join(f"L{k+1}" if state.lmask[k] else " . " for k in range(len(state.lmask)))
         rows += [

@@ -1,8 +1,8 @@
 # Python localization demos
 
 Demos of the Extended Kalman Filter and the Particle Filter (Monte Carlo
-Localization) for localization, plus EKF-SLAM for mapping, used during
-lectures.
+Localization) for localization, plus EKF-SLAM and pose-graph SLAM for
+mapping, used during lectures.
 
 There are four point landmarks which you can turn on and off. You control what
 the robot's sensors really measure *and* what the filter believes about them,
@@ -17,6 +17,7 @@ python3 -m venv .venv
 .venv/bin/python run_ekf.py        # Extended Kalman Filter (localization)
 .venv/bin/python run_pf.py         # Monte Carlo Localization
 .venv/bin/python run_ekfslam.py    # EKF-SLAM (mapping)
+.venv/bin/python run_pgo.py        # pose-graph SLAM (mapping, batch optimization)
 .venv/bin/python run_drive.py      # odometry only, no filter
 ```
 
@@ -34,18 +35,19 @@ for the key list at any time.
 | `1`…`4` | use landmark 1…4 | `enter` | force a measurement update |
 | `tab` / `shift-tab` | select a parameter | `g` | Gaussian overlay on/off |
 | `>` / `<` | raise / lower it | `x` | modelled range/bearing noise off/on |
-| `l` / `L` | model := true, this row / all | `c` | cycle particle colour: weight/heading/plain (PF only) |
+| `l` / `L` | model := true, this row / all | `c` | cycle particle colour: weight/heading (PF only) |
 | `h` | key list | `A` | draw all particles, not just 20000 (PF only) |
 | `q` | quit | `p` | resampling on/off (PF only) |
 | `t` | true robot on/off | `o` | resample once (PF only) |
 | `S` | screenshot (2 PNGs, in `snapshots/`) | `n` / `N` | fewer / more particles (PF only) |
 | | | `s` | superGPS fix (SLAM only) |
-| | | `G` / `y` | GPS / compass fix, once (EKF/PF only) |
+| | | `G` / `y` | GPS / compass fix, once (EKF/PF only); `G` also adds a GPS edge (PGO only) |
+| | | `O` | optimize the pose graph, once (PGO only) |
 
-`run_ekf.py`, `run_pf.py` and `run_ekfslam.py` each only wire up (and list
-with `h`) the keys that do something in that program, so the PF-only,
-EKF-only and SLAM-only rows above don't show up in the other programs' key
-lists.
+`run_ekf.py`, `run_pf.py`, `run_ekfslam.py` and `run_pgo.py` each only wire
+up (and list with `h`) the keys that do something in that program, so the
+PF-only, EKF-only, SLAM-only and PGO-only rows above don't show up in the
+other programs' key lists.
 
 Driving is set-point control: you set a speed and the robot keeps going. The
 arrow keys nudge the set point up and down, so `space` is how you stop.
@@ -57,9 +59,9 @@ The panel on the left is the heart of the demo:
 ```
          TRUE     MODEL
          ----     -----
- sig_td [  0  ]    0.1      motion noise, proportional to distance driven
-sig_rda    0       0.1      rotation noise, proportional to the turn
- sig_rd    0       0.1      rotation noise, proportional to distance driven
+ sig_td [  0  ]    0.25     motion noise, proportional to distance driven
+sig_rda    0       0.25     rotation noise, proportional to the turn
+ sig_rd    0       0.25     rotation noise, proportional to distance driven
 sig_rho   0.1m     off      range measurement noise
 sig_phi    1°      off      bearing measurement noise
         (fire-once sensors)
@@ -311,18 +313,114 @@ tension is itself the point: it's the textbook reason EKF-SLAM is described
 as *inconsistent* rather than simply "noisy," and why other approaches
 (pose-graph optimisation, particle-based SLAM) exist.
 
+## Pose-graph SLAM
+
+`run_pgo.py` is a different answer to the same problem EKF-SLAM just showed
+you being *inconsistent* about: instead of folding in one measurement at a
+time and never revisiting an earlier pose, it keeps every measurement as an
+edge in a graph and only solves the whole thing in one batch, when you ask
+it to. One loop closure can then correct the *entire* accumulated path at
+once, not just wherever the robot is right now.
+
+Landmarks default *off* here (unlike every other demo, where they default
+on) — turn at least one on with `1`..`4` first, or every landmark would be
+in range from the very first pose (`max_rng` defaults to infinity — see
+below) and you'd get all four dumped into the graph immediately instead of
+discovering them as you drive.
+
+Drive normally. Every `pgo_node_spacing` metres of true distance travelled
+(1 m by default), a new pose node is added, connected to the previous one by
+a noisy odometry edge, plus a landmark-observation edge for every landmark
+currently within `max_rng` — landmark positions are *not* known, so the
+first sighting of each one adds it to the graph too, the same
+inverse-observation trick `EKFSLAM.update` uses. The magenta lines show
+every in-range landmark live, whether or not that particular frame also
+happens to add a graph edge for it. Nothing is corrected as you drive: the
+dashed grey line is the raw, ever-growing odometry chain, and the solid blue
+line with dots is the graph's current best guess, which starts out identical
+to the dashed line and only moves when you press:
+
+* `O` — solve the whole graph with Gauss-Newton, once.
+* `G` — add a GPS fix (see below).
+
+### A basic loop
+
+* Turn on a landmark or two (`1`..`4`), then drive a big loop that passes
+  within `max_rng` of at least one of them twice — easiest by driving in a
+  circle around the middle of the landmark square (hold one arrow key to
+  turn, the other to go forward). Watch the solid line drift away from the
+  dashed one lap after lap, exactly like `run_drive.py`'s uncertain mode.
+* Press `O`. The solid line should snap into a single, consistent loop, and
+  the red landmark estimate(s) should jump close to the black ground-truth
+  dot(s). The dashed line never changes — it's there so you can see how much
+  correction just happened.
+* Press `O` again with nothing new driven: barely anything moves, since the
+  graph is already close to its optimum for the edges it has. Drive a bit
+  further and press it again to fold in the new edges.
+
+### Comparing to EKF-SLAM
+
+* Same noise settings and the same landmarks turned on (remember EKF-SLAM
+  defaults them on, this demo off), but drive the same kind of loop in
+  `run_ekfslam.py` first and compare: EKF-SLAM's estimate updates every
+  step, so you always have *some* answer, but the path it draws behind the
+  robot is exactly whatever it believed at the time, never revised. The pose
+  graph has no opinion at all about the poses in between two node presses,
+  and no opinion about the *whole path* until you press `O` — but that
+  opinion is then consistent with everything it has ever measured.
+* Turn the model motion noise down to (near) zero and watch how little `O`
+  has to correct: with accurate odometry the raw dead-reckoning chain is
+  already nearly the graph's optimum. Turn it up and repeat the loop — the
+  bigger the drift, the more dramatic the correction.
+
+### A GPS fix
+
+* `G` adds a GPS edge on the *latest* pose node — a direct, absolute (x, y)
+  reading, the only kind of edge here that isn't purely relative to another
+  node. It's how you tie the graph to the world's absolute frame instead of
+  just its own internal consistency, e.g. after driving with landmarks off
+  (dead reckoning only, no loop closure available) or to align a graph that
+  otherwise has no way to know where it started in the world.
+* Like every other edge, pressing `G` doesn't move anything by itself —
+  nothing happens until you press `O`.
+* Unlike EKF-SLAM's `s` (superGPS), this is deliberately *not* a
+  near-perfect fix: it uses the same realistic `sig_gps` noise as the `G` key
+  in the EKF/PF demos, not a near-zero variance. A sequential filter like EKF
+  only ever reconciles one fix against its current belief, one at a time, so
+  a near-perfect fix there is safe. A batch solver reconciles every edge at
+  once — two near-perfect GPS fixes on different poses that disagree with
+  the odometry between them would force all of that disagreement onto
+  whatever edges sit in between, which can distort the whole graph. A
+  realistic, finite `Omega` instead lets `O` trade the fix off against
+  everything else, the same way a landmark edge already does.
+* Try it after driving a while with all landmarks off: press `O` first with
+  no GPS edge (nothing to correct, the raw odometry chain is already its own
+  optimum), then press `G` followed by `O` — the graph should nudge towards
+  the fix, by an amount that depends on how much odometry uncertainty has
+  built up between the anchored first pose and the one you fixed.
+
+### Data association is still assumed away
+
+Exactly as the main "Questions" section below discusses for the other
+demos, `run_pgo.py` still knows *which* landmark index it saw every time —
+in a real system this would be a data-association problem in its own right,
+including the risk of a *wrong* association silently merging two different
+physical landmarks into one, which pose-graph SLAM has no built-in defence
+against (Gauss-Newton will happily converge on a wrong but self-consistent
+answer if the edges it's given are themselves wrong).
+
 ## Questions
 
 ### Simulation and the actual filter
 
 Which parts of the code are simulating the world and which are estimating it?
 Here the answer is structural: `locdemo/world.py` is the simulation,
-`locdemo/ekf.py`, `locdemo/pf.py` and `locdemo/ekfslam.py` are the filters,
-and `locdemo/models.py` holds the models they share. Note that
-`locdemo/params.py`'s `xL`/`yL` are read by `world.py` (truth) and by
-`ekf.py`/`pf.py` (the known map) but never by `ekfslam.py` itself, only by
-`run_ekfslam.py`'s drawing code, to plot the ground truth you're comparing
-the map against.
+`locdemo/ekf.py`, `locdemo/pf.py`, `locdemo/ekfslam.py` and `locdemo/pgo.py`
+are the estimators, and `locdemo/models.py` holds the models they share. Note
+that `locdemo/params.py`'s `xL`/`yL` are read by `world.py` (truth) and by
+`ekf.py`/`pf.py` (the known map) but never by `ekfslam.py` or `pgo.py`
+themselves, only by `run_ekfslam.py`'s/`run_pgo.py`'s drawing code, to plot
+the ground truth you're comparing the map against.
 
 ### Data association
 
@@ -347,7 +445,11 @@ The filter mathematics is written out in numpy rather than taken from a
 filtering library, because those fifteen lines are the thing being taught.
 `locdemo/ekf.py`, `locdemo/pf.py` and `locdemo/ekfslam.py` take `Q` and `R`
 explicitly, so dropping in a library-backed implementation and checking that
-it agrees is a reasonable exercise.
+it agrees is a reasonable exercise. `locdemo/pgo.py` is the same idea for the
+batch side: a plain Gauss-Newton solver over a dense Jacobian, small enough
+for this demo's graph sizes that there's no need for a sparse solver to keep
+it readable as exactly what it is -- build `H = J^T Omega J` and
+`b = J^T Omega e` edge by edge, solve `H dx = -b`, repeat.
 
 The particle filter is vectorised over particles and keeps the explicit loop
 over landmarks, which is why 100 000 particles run at about 7 ms per step. The
@@ -380,7 +482,12 @@ biased, which is the whole point.
 The interesting check is `test_ekf_covariance_matches_monte_carlo`: it compares
 the covariance the EKF predicts against 400 000 samples drawn from the same
 motion model, which is the comparison `run_drive.py`'s montecarlo mode lets
-you make by eye. The two agree to within 0.3%.
+you make by eye. The two agree to within 0.3%. The `test_pgo_*` tests build a
+synthetic noisy loop with known ground truth and check that `optimize()`
+never increases its own objective (true on every trial, by construction of
+Gauss-Newton) and that it clearly reduces true pose/landmark error on
+average across many noisy trials (not guaranteed on any single trial for a
+weakly-constrained quantity, e.g. a landmark seen only twice).
 
 Every demo also runs without a window, which is useful for preparing a
 lecture:
@@ -392,4 +499,11 @@ lecture:
     --set model.rho=0.5 --landmarks 1010
 .venv/bin/python run_ekfslam.py --snapshot ekfslam.png --steps 250 --v 0.5 --w 20 \
     --set model.rho=0.1 --set model.phi=1.0 --landmarks 1111
+.venv/bin/python run_pgo.py --snapshot pgo.png --steps 600 --v 0.5 --w 8 \
+    --set model.rho=0.1 --set model.phi=1.0 --landmarks 1111
 ```
+
+`run_pgo.py --snapshot` drives and builds the graph for `--steps` steps but,
+like every other one-shot key, never presses `O` for you — the snapshot is
+the *raw* graph. Optimizing a saved snapshot isn't wired up as a flag; do it
+interactively, or call `graph.optimize()` directly the way the tests do.

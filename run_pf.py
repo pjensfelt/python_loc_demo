@@ -21,10 +21,6 @@ def main():
 
     params = Params()
     state = DemoState(newN=args.particles)
-    # Deliberately larger motion noise than the EKF's default, so the
-    # particles spread out and explore the state space.
-    for name in ("td", "rda", "rd"):
-        state.set_value("model", name, 0.25)
     state.n_idx = min(range(len(N_LADDER)),
                       key=lambda i: abs(N_LADDER[i] - args.particles))
     app.apply_common_args(state, args)

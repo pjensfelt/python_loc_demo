@@ -66,15 +66,27 @@ _SLAM_ONLY = """
 _ABSOLUTE_ONLY = """
                     G  GPS fix (once)         y  compass fix (once)"""
 
+_PGO_ONLY = """
+                    O  optimize the graph (once)
+                    G  GPS fix -- adds an edge, folded in on next O"""
 
-def help_text(particles: bool = False, slam: bool = False, absolute: bool = False) -> str:
-    """The key list for the current demo; PF, EKF and SLAM each have a few
-    keys the others don't, so they get their own copy of the mode-specific
-    line. SLAM shares 'i' with EKF (both are Kalman filters) and adds 's'.
-    `absolute` adds the GPS/compass one-shot fixes (EKF and PF, not SLAM,
-    which already has its own near-perfect 's' fix for a different purpose).
+
+def help_text(particles: bool = False, slam: bool = False, absolute: bool = False,
+              pgo: bool = False) -> str:
+    """The key list for the current demo; PF, EKF, SLAM and PGO each have a
+    few keys the others don't, so they get their own copy of the mode-
+    specific line. SLAM shares 'i' with EKF (both are Kalman filters) and
+    adds 's'. `absolute` adds the GPS/compass one-shot fixes (EKF and PF,
+    not SLAM, which already has its own near-perfect 's' fix for a
+    different purpose). `pgo` is its own demo (run_pgo.py), neither PF-like
+    nor EKF-like, so it gets no 'i'/'s' line at all, just its own key.
     """
-    extra = _PF_ONLY if particles else (_EKF_ONLY + (_SLAM_ONLY if slam else ""))
+    if pgo:
+        extra = _PGO_ONLY
+    elif particles:
+        extra = _PF_ONLY
+    else:
+        extra = _EKF_ONLY + (_SLAM_ONLY if slam else "")
     extra += _ABSOLUTE_ONLY if absolute else ""
     return _COMMON_HELP + extra + "\n"
 
@@ -96,7 +108,7 @@ def clear_default_keymap():
 
 
 def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_help=None,
-                  particles=False, slam=False, absolute=False):
+                  particles=False, slam=False, absolute=False, pgo=False):
     """Return a matplotlib key_press_event callback bound to `state`.
 
     `params` is needed for 'l'/'L': the model value of a FIXED_MODEL_ROWS
@@ -108,9 +120,10 @@ def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_he
     calling program (e.g. "pf", "ekf") for the screenshot filename.
 
     `particles` selects which of the PF-only / EKF-only keys are live,
-    `slam` additionally enables the superGPS key, and `absolute` enables the
+    `slam` additionally enables the superGPS key, `absolute` enables the
     GPS/compass one-shot fixes -- EKF and PF, not SLAM, which already has
-    its own near-perfect 's' fix serving a different demo.
+    its own near-perfect 's' fix serving a different demo -- and `pgo`
+    enables the graph-optimization key (run_pgo.py only).
     """
 
     def clamp(value, limit):
@@ -162,7 +175,7 @@ def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_he
             state.setUniform = True
         elif k == "d":
             state.addDisturbance = True
-        elif k == "i" and not particles:
+        elif k == "i" and not particles and not pgo:
             state.injectNoise = True
         elif k == "enter":
             state.forceUpdate = True
@@ -170,10 +183,12 @@ def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_he
             state.superGPS = True
         elif k == "o" and particles:
             state.resampleOnce = True
-        elif k == "G" and absolute:
+        elif k == "G" and (absolute or pgo):
             state.injectGPS = True
         elif k == "y" and absolute:
             state.injectCompass = True
+        elif k == "O" and pgo:
+            state.optimizePGO = True
 
         # ---- toggles -------------------------------------------------
         elif k == "g":
@@ -225,7 +240,7 @@ def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_he
 
         # ---- meta -----------------------------------------------------
         elif k == "h":
-            print(help_text(particles, slam, absolute))
+            print(help_text(particles, slam, absolute, pgo))
             if on_help is not None:
                 on_help()
         elif k == "S" and ax is not None:
@@ -240,9 +255,9 @@ def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_he
 
 
 def connect(fig, state: DemoState, params, ax=None, demo="demo", on_help=None,
-            particles=False, slam=False, absolute=False):
+            particles=False, slam=False, absolute=False, pgo=False):
     clear_default_keymap()
     handler, release = make_handler(state, params, fig, ax, demo, on_help,
-                                     particles, slam, absolute)
+                                     particles, slam, absolute, pgo)
     fig.canvas.mpl_connect("key_press_event", handler)
     fig.canvas.mpl_connect("key_release_event", release)
