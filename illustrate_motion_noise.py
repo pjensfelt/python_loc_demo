@@ -32,7 +32,7 @@ from pathlib import Path
 
 import numpy as np
 
-from locdemo.draw import draw_heading_wheel, heading_line, robot_outline
+from locdemo.draw import HEADING_CMAP, draw_heading_wheel, heading_line, robot_outline
 from locdemo.models import motion_model, sample_motion_noise
 
 
@@ -79,23 +79,49 @@ def interp(states, t):
     return x, y, a
 
 
+def random_walk_states(x0, y0, a0_deg, n, n_steps, step_std_xy, step_halfwidth_deg, rng):
+    """A genuine random walk: an independent x/y/heading kick each step,
+    accumulated -- unlike scaling one fixed random draw up smoothly over
+    time (which makes every particle glide outward in a straight line, like
+    a detonation), this actually wanders, the same way propagate_states's
+    per-step noise does for the kinematic cases. x, y and heading are drawn
+    independently of each other and of position, matching "random, and in
+    particular independent of heading."
+    """
+    x = np.full(n, x0)
+    y = np.full(n, y0)
+    a_deg = np.full(n, a0_deg)
+    states = [(x, y, a_deg)]
+    for _ in range(n_steps):
+        x = x + step_std_xy * rng.standard_normal(n)
+        y = y + step_std_xy * rng.standard_normal(n)
+        a_deg = a_deg + rng.uniform(-step_halfwidth_deg, step_halfwidth_deg, n)
+        states.append((x, y, a_deg))
+    return states
+
+
 class CloudArtist:
     """One animated panel: particle cloud coloured by heading, plus robot icon."""
 
-    def __init__(self, ax, clim):
-        self.scat = ax.scatter([], [], s=6, cmap="twilight", zorder=2)
-        # vmin/vmax at construction time are silently dropped when there is
-        # no data yet (matplotlib warns and ignores them), and set_array
-        # later would otherwise autoscale per frame -- which would break the
-        # shared colour scale every panel needs to be comparable. Setting it
-        # explicitly here sticks across every subsequent set_array.
-        self.scat.set_clim(*clim)
+    def __init__(self, ax):
+        # cmap is set after construction, not passed to scatter() directly:
+        # with no data yet, matplotlib silently drops a cmap argument (and
+        # warns that it's doing so) -- it doesn't error, so this was easy to
+        # not notice, but it meant every particle was coloured by the
+        # default viridis instead of the intended wheel colormap.
+        self.scat = ax.scatter([], [], s=6, zorder=2)
+        self.scat.set_cmap(HEADING_CMAP)
+        # Fixed 0-360, not some panel-specific narrower window: a narrower
+        # one would stretch the *whole* wheel across whatever slice of
+        # headings this panel happens to reach, which pops more on screen
+        # but breaks the legend's "0deg is red" for what's actually shown.
+        self.scat.set_clim(0, 360)
         (self.body,) = ax.plot([], [], color="k", lw=2, zorder=5)
         (self.head,) = ax.plot([], [], color="k", lw=2, zorder=5)
 
     def set_cloud(self, x, y, heading_deg):
         self.scat.set_offsets(np.column_stack([x, y]))
-        self.scat.set_array(heading_deg)
+        self.scat.set_array(np.mod(heading_deg, 360))
 
     def set_robot(self, pose):
         if pose is None:
@@ -184,41 +210,44 @@ def main():
     states_tiny = propagate_states(x, y, a, n_steps, D_step, DA_step, rng=rng, **tiny)
     states_large = propagate_states(x, y, a, n_steps, D_step, DA_step, rng=rng, **large)
 
-    # Shared colour scale for all three panels, set from the *large*-noise
-    # case's final spread of headings. The random-motion panel holds every
-    # particle at the same a0, one solid colour throughout -- itself the
-    # point, since that case never touches heading at all.
-    a_l_deg = np.rad2deg(states_large[-1][2])
-    clim = (a_l_deg.mean() - 3 * a_l_deg.std(), a_l_deg.mean() + 3 * a_l_deg.std())
     a0_deg = np.rad2deg(a0)
 
-    # Random motion: no direction, no kinematics -- just an isotropic blur
-    # that grows with sqrt(time), each particle's fixed random *direction*
-    # scaled by the growing spread, so the animation is smooth rather than
-    # re-randomised every frame. Heading wanders the same way, around a0
-    # (random motion has no deterministic turn to drift its mean), with a
-    # magnitude matched to the large-noise case's final heading spread --
-    # and, crucially, drawn from its *own* independent random numbers (za),
-    # not from zx/zy. That decoupling is the whole point: the colour ends up
-    # scattered with no spatial pattern, unlike the real motion model where
-    # heading and position are tightly correlated (that correlation is
-    # exactly what produces the banana).
+    # Random motion: an actual random walk -- an independent x/y/heading kick
+    # at each of the 6 steps, accumulated via random_walk_states, the same
+    # way propagate_states does for the kinematic cases. (An earlier version
+    # of this panel scaled one fixed random draw up smoothly over time
+    # instead; that gets the *final* distribution's variance right but makes
+    # every particle glide outward in a dead-straight line, like a
+    # detonation, which isn't what a random walk actually looks like.)
+    # Heading kicks are uniform, not Gaussian: with only 6 steps a Gaussian
+    # wide enough to spread noticeably still tapers off towards the far side
+    # of the circle, which understates how little "independent of heading"
+    # actually tells you -- a real random guess has no preferred direction,
+    # and the colour should end up close to flat everywhere, not just wider.
+    # x, y and heading are independent of each other and of position --
+    # that decoupling is the whole point: the colour ends up scattered with
+    # no spatial pattern, unlike the real motion model where heading and
+    # position are tightly correlated (that correlation is exactly what
+    # produces the banana).
     #
-    # The spread is sized so the true final pose sits about 2 std devs out
-    # -- there's *some* support there (a few particles reach it), but most
-    # of the probability mass is wasted elsewhere. That's the point of this
-    # panel: matching the real motion model's own spread (as it was set
-    # before) put the true pose several std devs beyond the cloud's edge,
-    # i.e. the isotropic guess assigned it essentially zero probability.
+    # The *position* step size is set so the accumulated spread puts the
+    # true final pose about 2 std devs out -- there's *some* support there
+    # (a few particles reach it), but most of the probability mass is
+    # wasted elsewhere. That's the point of this panel: matching the real
+    # motion model's own spread (as it was set before) put the true pose
+    # several std devs beyond the cloud's edge, i.e. the isotropic guess
+    # assigned it essentially zero probability.
     x_true, y_true, _ = nominal[-1]
     dist_to_true = np.hypot(x_true - x0, y_true - y0)
     spread_total = dist_to_true / 2.0
-    # 3x the large-noise case's own heading std, i.e. comparable to the full
-    # +-3-sigma colour range that case spans -- at 1x the colour barely moved
-    # and the "no spatial pattern" contrast this panel is supposed to show
-    # was invisible.
-    heading_spread_total = 3 * a_l_deg.std()
-    zx, zy, za = (rng.standard_normal(n), rng.standard_normal(n), rng.standard_normal(n))
+    step_std_xy = spread_total / np.sqrt(n_steps)
+    # Each step's heading kick is Uniform(-90, 90) deg; summing 6 of them
+    # (central limit theorem) gives an approximately Normal(0, ~127 deg)
+    # walk in heading, wide enough that wrapping it onto the circle comes
+    # out close to flat rather than concentrated on one side.
+    step_heading_halfwidth_deg = 90.0
+    states_random = random_walk_states(x0, y0, a0_deg, n, n_steps, step_std_xy,
+                                        step_heading_halfwidth_deg, rng)
 
     pad = 0.6
 
@@ -254,8 +283,8 @@ def main():
         ax.set_ylim(*ylim)
         if path is not None:
             ax.plot(*path, "--", color="0.6", lw=1, zorder=1)
-        cloud = CloudArtist(ax, clim)
-        draw_heading_wheel(wheel_ax, cmap="twilight")
+        cloud = CloudArtist(ax)
+        draw_heading_wheel(wheel_ax)
         fig.text(0.01, 0.005, "P. Jensfelt, KTH 2026", ha="left", va="bottom",
                   fontsize=7, color="0.6")
         return fig, ax, cloud
@@ -267,10 +296,8 @@ def main():
 
         def update(frame):
             t = frame / args.substeps
-            growth = np.sqrt(min(t, n_steps) / n_steps)
-            spread = spread_total * growth
-            heading = a0_deg + heading_spread_total * growth * za
-            cloud.set_cloud(x0 + spread * zx, y0 + spread * zy, heading)
+            xr, yr, headingr = interp(states_random, t)
+            cloud.set_cloud(xr, yr, headingr)
             # The true robot still drives the same arc here -- random motion
             # is a (bad) guess about *belief*, not a claim that the robot
             # itself moves randomly. Showing it drive normally while the

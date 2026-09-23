@@ -18,7 +18,7 @@ import argparse
 
 import numpy as np
 
-from locdemo.draw import draw_heading_wheel, heading_line, robot_outline
+from locdemo.draw import HEADING_CMAP, draw_heading_wheel, heading_line, robot_outline
 from locdemo.models import motion_model, sample_motion_noise, wrap_angle
 
 
@@ -29,11 +29,17 @@ def sample_prior(n, x0, y0, a0, pos_std, a_std, rng):
     return x, y, a
 
 
-def draw_panel(ax, x, y, heading_deg, clim, title, robot_pose=None, center_xy=None):
+def draw_panel(ax, x, y, heading_deg, title, robot_pose=None, center_xy=None):
     if heading_deg is None:
         sc = ax.scatter(x, y, s=6, color="0.55", alpha=0.7)
     else:
-        sc = ax.scatter(x, y, s=6, c=heading_deg, cmap="twilight", vmin=clim[0], vmax=clim[1])
+        # Fixed 0-360 range, matching the wheel legend's full circle -- a
+        # local, zoomed-in vmin/vmax would stretch the *whole* wheel across
+        # whatever narrow slice of headings this panel happens to have,
+        # which makes the colours pop more but means the legend's "0deg is
+        # red" no longer actually holds for what's on screen.
+        sc = ax.scatter(x, y, s=6, c=np.mod(heading_deg, 360), cmap=HEADING_CMAP,
+                         vmin=0, vmax=360)
     if robot_pose is not None:
         ax.plot(*robot_outline(*robot_pose, 0.3, 0.2), color="k", lw=2, zorder=5)
         ax.plot(*heading_line(*robot_pose, 0.6), color="k", lw=2, zorder=5)
@@ -68,7 +74,6 @@ def main():
     pos_std, a_std = 0.12, np.deg2rad(10.0)
     x, y, a = sample_prior(args.n, x0, y0, a0, pos_std, a_std, rng)
     a_deg = np.rad2deg(a)
-    clim = (np.rad2deg(a0) - 3 * np.rad2deg(a_std), np.rad2deg(a0) + 3 * np.rad2deg(a_std))
 
     # Actual motion model: drive forward and turn, same equations and noise
     # sources as locdemo.pf.ParticleFilter.predict.
@@ -99,13 +104,13 @@ def main():
     axes[2].sharex(axes[0])
     axes[2].sharey(axes[0])
 
-    draw_panel(axes[0], x, y, a_deg, clim,
+    draw_panel(axes[0], x, y, a_deg,
                "Prior belief\n$p(x_k\\,|\\,Z_k,U_k)$",
                robot_pose=(x0, y0, a0))
-    draw_panel(axes[1], xr, yr, None, clim,
+    draw_panel(axes[1], xr, yr, None,
                "If motion were random noise\n(independent of heading)",
                center_xy=(x0, y0))
-    draw_panel(axes[2], xk, yk, a_deg, clim,
+    draw_panel(axes[2], xk, yk, a_deg,
                "Actual motion model\n$p(x_{k+1}\\,|\\,u_{k+1},x_k)$",
                robot_pose=(x_nom, y_nom, a_nom))
 
@@ -115,7 +120,7 @@ def main():
     axes[0].set_xlim(all_x.min() - pad, all_x.max() + pad)
     axes[0].set_ylim(all_y.min() - pad, all_y.max() + pad)
 
-    draw_heading_wheel(axes[3], cmap="twilight")
+    draw_heading_wheel(axes[3])
     fig.suptitle("Prediction step: convolve the prior with the motion model", fontsize=13)
     fig.text(0.01, 0.01, "P. Jensfelt, KTH 2026", ha="left", va="bottom",
               fontsize=7, color="0.6")
