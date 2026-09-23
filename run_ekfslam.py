@@ -119,7 +119,8 @@ def main():
         err = np.hypot(slam.X[0] - world.xt, slam.X[1] - world.yt)
         panel.update(state, params, f"error   = {err:.3f} m\nsig_x,y = "
                             f"{np.sqrt(slam.P[0,0]):.3f}, {np.sqrt(slam.P[1,1]):.3f} m\n"
-                            f"mapped  = {len(mapped)}/{params.NL}")
+                            f"mapped  = {len(mapped)}/{params.NL}\n"
+                            f"state   = {len(slam.X)} (3 + 2 per mapped landmark)")
         return (true_robot.artists + estimate.artists + gauss.artists
                 + rays.artists + landmark_map.artists + panel.artists)
 
