@@ -110,6 +110,7 @@ def main():
         if state.injectGPS:
             xg, yg = world.measure_gps(state)
             pf.gps_update(xg, yg, state.zGpsStd)
+            print(f"GPS fix: ({xg:.3f}, {yg:.3f})")
             # Reweight only -- no resample here. Resampling happens the same
             # way it does for every other measurement: via maybe_resample()
             # above, next time you press enter or drive (see the top of this
@@ -119,6 +120,7 @@ def main():
         if state.injectCompass:
             a_meas = world.measure_compass(state)
             pf.compass_update(a_meas, state.zCompassStd)
+            print(f"compass fix: {np.rad2deg(a_meas):.1f} deg")
             changed = True
             state.injectCompass = False
 

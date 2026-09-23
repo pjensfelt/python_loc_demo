@@ -229,7 +229,9 @@ def main():
             # sequential filter can.
             xg, yg = world.measure_gps(state)
             Omega_gps = np.diag([1 / state.zGpsStd ** 2, 1 / state.zGpsStd ** 2])
-            graph.add_gps_edge(graph.n_poses - 1, xg, yg, Omega_gps)
+            node = graph.n_poses - 1
+            graph.add_gps_edge(node, xg, yg, Omega_gps)
+            print(f"GPS edge added at node {node}: ({xg:.3f}, {yg:.3f}) -- press 'O' to fold it in")
             state.injectGPS = False
         if state.optimizePGO:
             graph.optimize()

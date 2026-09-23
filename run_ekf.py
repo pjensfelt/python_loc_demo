@@ -75,10 +75,12 @@ def main():
         if state.injectGPS:
             xg, yg = world.measure_gps(state)
             ekf.gps_update(xg, yg, state.zGpsStd)
+            print(f"GPS fix: ({xg:.3f}, {yg:.3f})")
             state.injectGPS = False
         if state.injectCompass:
             a_meas = world.measure_compass(state)
             ekf.compass_update(a_meas, state.zCompassStd)
+            print(f"compass fix: {np.rad2deg(a_meas):.1f} deg")
             state.injectCompass = False
 
         if fig is None:
