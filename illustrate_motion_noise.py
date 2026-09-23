@@ -32,7 +32,7 @@ from pathlib import Path
 
 import numpy as np
 
-from locdemo.draw import heading_line, robot_outline
+from locdemo.draw import draw_heading_wheel, heading_line, robot_outline
 from locdemo.models import motion_model, sample_motion_noise
 
 
@@ -241,7 +241,12 @@ def main():
     total_frames = n_steps * args.substeps + 1
 
     def make_panel(title, xlim, ylim, path=None):
-        fig, ax = plt.subplots(figsize=(5.6, 5.2), constrained_layout=True)
+        # A narrow 2nd column for the heading-wheel legend, so
+        # constrained_layout reserves its space instead of it overlapping
+        # the data axes.
+        fig, (ax, wheel_ax) = plt.subplots(1, 2, figsize=(6.6, 5.2),
+                                            gridspec_kw={"width_ratios": [1, 0.3]},
+                                            constrained_layout=True)
         ax.set_title(title, fontsize=12)
         ax.set_aspect("equal")
         ax.grid(True, alpha=0.2)
@@ -250,7 +255,7 @@ def main():
         if path is not None:
             ax.plot(*path, "--", color="0.6", lw=1, zorder=1)
         cloud = CloudArtist(ax, clim)
-        fig.colorbar(cloud.scat, ax=ax, shrink=0.85, pad=0.02, label="particle heading [deg]")
+        draw_heading_wheel(wheel_ax, cmap="twilight")
         fig.text(0.01, 0.005, "P. Jensfelt, KTH 2026", ha="left", va="bottom",
                   fontsize=7, color="0.6")
         return fig, ax, cloud

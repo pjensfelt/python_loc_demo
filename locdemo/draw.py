@@ -7,6 +7,7 @@ rather than being deleted and replotted from scratch -- which is what makes
 
 from itertools import accumulate
 
+import matplotlib
 import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.colors import LinearSegmentedColormap
@@ -42,6 +43,48 @@ def _make_colorwheel(transitions=_WHEEL_TRANSITIONS):
 
 
 HEADING_CMAP = LinearSegmentedColormap.from_list("direction_wheel", _make_colorwheel(), N=256)
+
+
+def heading_wheel_image(cmap=None, n=201):
+    """RGBA disc: angle -> cmap, masked to a circle, transparent outside it.
+
+    Default cmap is HEADING_CMAP; pass a different one (e.g. matplotlib's
+    "twilight") to legend a scatter that was coloured with that instead --
+    the wheel is just a picture of whatever cyclic colormap is in use, not
+    tied to one specific convention.
+    """
+    if cmap is None:
+        cmap = HEADING_CMAP
+    elif isinstance(cmap, str):
+        cmap = matplotlib.colormaps[cmap]
+    lin = np.linspace(-1, 1, n)
+    xx, yy = np.meshgrid(lin, lin)
+    theta = np.mod(np.arctan2(yy, xx), 2 * np.pi)
+    rgba = np.asarray(cmap(theta / (2 * np.pi)))
+    rgba[..., 3] = (np.hypot(xx, yy) <= 1.0).astype(float)
+    return rgba
+
+
+def draw_heading_wheel(ax, cmap=None, n=201):
+    """Draw a heading colour wheel as a small legend disc on `ax`.
+
+    A plain linear colorbar makes you read a number off an axis and
+    remember what angle that was; a wheel lets you match a particle's
+    colour straight to a direction by eye, the same way a compass rose
+    does -- which is the point of colouring by heading in the first place.
+    Convention: 0 rad (+x, east) at the right, going counterclockwise, same
+    as heading_line/robot_outline draw it.
+    """
+    ax.imshow(heading_wheel_image(cmap, n), extent=(-1, 1, -1, 1), origin="lower", zorder=1)
+    for deg, dx, dy, ha, va in [(0, 1.2, 0, "left", "center"),
+                                (90, 0, 1.2, "center", "bottom"),
+                                (180, -1.2, 0, "right", "center"),
+                                (270, 0, -1.2, "center", "top")]:
+        ax.text(dx, dy, f"{deg}°", ha=ha, va=va, fontsize=7, color="0.3")
+    ax.set_xlim(-1.5, 1.5)
+    ax.set_ylim(-1.5, 1.5)
+    ax.set_aspect("equal")
+    ax.axis("off")
 
 
 def robot_outline(x, y, a, length, width):

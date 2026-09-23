@@ -38,6 +38,10 @@ def main():
         keys.clear_default_keymap()
         fig = plt.figure("Monte Carlo Localization", figsize=(11, 7))
         ax = draw.setup_axes(fig, params, "Monte Carlo Localization")
+        # Legend for heading colour, tucked under the parameter panel; only
+        # relevant (and only shown) while that colour mode is active.
+        wheel_ax = fig.add_axes([0.03, 0.02, 0.20, 0.20])
+        draw.draw_heading_wheel(wheel_ax)
         particles = draw.ParticleArtist(ax, rng=rng)
         true_robot = draw.RobotArtist(ax, params, color="k")
         gauss = draw.GaussArtist(ax, color="r")
@@ -127,6 +131,7 @@ def main():
 
         # ---- drawing ---------------------------------------------------
         particles.set(pf.X, pf.w, state.ptColorMode, draw_all=state.drawAllParticles)
+        wheel_ax.set_visible(state.ptColorMode == "heading")
         true_robot.set_pose(*world.pose)
         true_robot.set_visible(state.showTrueRobot)
         rays.set(world.pose, rho, phi, state.lmask,

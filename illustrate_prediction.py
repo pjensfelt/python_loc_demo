@@ -18,7 +18,7 @@ import argparse
 
 import numpy as np
 
-from locdemo.draw import heading_line, robot_outline
+from locdemo.draw import draw_heading_wheel, heading_line, robot_outline
 from locdemo.models import motion_model, sample_motion_noise, wrap_angle
 
 
@@ -88,8 +88,16 @@ def main():
     xr = x0 + spread * rng.standard_normal(args.n)
     yr = y0 + spread * rng.standard_normal(args.n)
 
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.6), sharex=True, sharey=True,
+    # A 4th, narrow column for the heading-wheel legend, so constrained_layout
+    # reserves its space the same way it would for a colorbar instead of it
+    # overlapping the third panel's own data.
+    fig, axes = plt.subplots(1, 4, figsize=(14.5, 4.6),
+                              gridspec_kw={"width_ratios": [1, 1, 1, 0.4]},
                               constrained_layout=True)
+    axes[1].sharex(axes[0])
+    axes[1].sharey(axes[0])
+    axes[2].sharex(axes[0])
+    axes[2].sharey(axes[0])
 
     draw_panel(axes[0], x, y, a_deg, clim,
                "Prior belief\n$p(x_k\\,|\\,Z_k,U_k)$",
@@ -97,9 +105,9 @@ def main():
     draw_panel(axes[1], xr, yr, None, clim,
                "If motion were random noise\n(independent of heading)",
                center_xy=(x0, y0))
-    sc2 = draw_panel(axes[2], xk, yk, a_deg, clim,
-                      "Actual motion model\n$p(x_{k+1}\\,|\\,u_{k+1},x_k)$",
-                      robot_pose=(x_nom, y_nom, a_nom))
+    draw_panel(axes[2], xk, yk, a_deg, clim,
+               "Actual motion model\n$p(x_{k+1}\\,|\\,u_{k+1},x_k)$",
+               robot_pose=(x_nom, y_nom, a_nom))
 
     pad = 0.6
     all_x = np.concatenate([x, xr, xk])
@@ -107,8 +115,7 @@ def main():
     axes[0].set_xlim(all_x.min() - pad, all_x.max() + pad)
     axes[0].set_ylim(all_y.min() - pad, all_y.max() + pad)
 
-    fig.colorbar(sc2, ax=axes, shrink=0.75, pad=0.02,
-                 label="particle heading [deg]")
+    draw_heading_wheel(axes[3], cmap="twilight")
     fig.suptitle("Prediction step: convolve the prior with the motion model", fontsize=13)
     fig.text(0.01, 0.01, "P. Jensfelt, KTH 2026", ha="left", va="bottom",
               fontsize=7, color="0.6")
