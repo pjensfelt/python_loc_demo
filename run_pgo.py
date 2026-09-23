@@ -150,12 +150,21 @@ def main():
 
         # ---- build the graph while driving ------------------------------
         if state.moving:
+            # D, DA are the *deterministic* odometry reading -- commanded
+            # speed times the wheel-calibration scale, no randomness -- the
+            # same convention EKFLocalizer.predict and EKFSLAM.predict use
+            # for their own mean update. Real drift then only comes from
+            # TRUE motion noise (the world actually not going where
+            # commanded) and wheel miscalibration, never from MODEL noise:
+            # that only feeds Q below, the optimizer's *belief* about how
+            # uncertain this reading is, exactly like every other filter
+            # here. Sampling model-noise directly into this mean (the
+            # previous version of this line) meant the graph's own
+            # odometry chain drifted even with TRUE noise at zero -- a real
+            # bug, not the intended "hard to get accurate" difficulty.
             v_scale, w_scale = models.odometry_scale(
                 state.value("true", "r"), state.value("true", "B"), params.r, params.B)
-            D, DA = models.sample_motion_noise(
-                state.tspeed * v_scale, state.rspeed * w_scale, params.dT,
-                state.value("model", "td"), state.value("model", "rda"),
-                state.value("model", "rd"), rng=rng)
+            D, DA = state.tspeed * v_scale * params.dT, state.rspeed * w_scale * params.dT
             a_prev = pg["odom"][2]
             pg["odom"] = np.array(models.motion_model(*pg["odom"], D, DA))
             A, W = models.motion_jacobians(a_prev, D)
