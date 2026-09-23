@@ -38,7 +38,8 @@ def main():
         rays = draw.RayArtist(ax)
         panel = draw.Panel(fig, flags=[("95%-Gaussian", lambda s: s.dispGaussApprox),
                                        ("extero", lambda s: not s.extero_off),
-                                       ("true robot", lambda s: s.showTrueRobot)])
+                                       ("true robot", lambda s: s.showTrueRobot)],
+                           absolute=True)
         keys.connect(fig, state, params, ax=ax, demo="ekf", particles=False, absolute=True)
         if not args.snapshot:
             print(keys.help_text(particles=False, absolute=True))
@@ -47,6 +48,10 @@ def main():
         # ---- simulation ------------------------------------------------
         world.step(state)
         rho, phi = world.measure(state)
+        # True distance, not the noisy rho reading -- max_rng is a physical
+        # sensing limit, so whether a landmark is even detected at all
+        # shouldn't hinge on which way that frame's noise happened to fall.
+        in_range = np.hypot(world.xt - params.xL, world.yt - params.yL) <= state.maxRange
 
         # ---- filter ----------------------------------------------------
         if state.injectNoise:
@@ -59,7 +64,7 @@ def main():
         if state.forceUpdate or state.moving:
             state.forceUpdate = False
             ekf.predict(state)
-            ekf.update(rho, phi, state)
+            ekf.update(rho, phi, state, in_range=in_range)
 
         # ---- one-shot requests ----------------------------------------
         if state.reset:
@@ -91,7 +96,7 @@ def main():
         true_robot.set_visible(state.showTrueRobot)
         estimate.set(ekf.X[0], ekf.X[1])
         rays.set(world.pose, rho, phi, state.lmask,
-                 state.use_range or state.use_bearing)
+                 state.use_range or state.use_bearing, in_range=in_range)
         gauss.set_visible(state.dispGaussApprox)
         if state.dispGaussApprox:
             gauss.set(ekf.X[:2], ekf.P[:2, :2], ekf.X[2], np.sqrt(ekf.P[2, 2]))

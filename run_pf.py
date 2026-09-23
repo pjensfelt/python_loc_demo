@@ -47,7 +47,8 @@ def main():
                                        ("draw all particles", lambda s: s.drawAllParticles),
                                        ("resample", lambda s: s.resample),
                                        ("extero", lambda s: not s.extero_off),
-                                       ("true robot", lambda s: s.showTrueRobot)])
+                                       ("true robot", lambda s: s.showTrueRobot)],
+                           absolute=True)
         keys.connect(fig, state, params, ax=ax, demo="pf", particles=True, absolute=True)
         if not args.snapshot:
             print(keys.help_text(particles=True, absolute=True))
@@ -59,6 +60,8 @@ def main():
         # ---- simulation ------------------------------------------------
         world.step(state)
         rho, phi = world.measure(state)
+        # True distance, not the noisy rho reading -- see run_ekf.py.
+        in_range = np.hypot(world.xt - params.xL, world.yt - params.yL) <= state.maxRange
 
         # ---- filter ----------------------------------------------------
         # Tracks whether the particle set changed this frame, so the cached
@@ -83,7 +86,7 @@ def main():
                 warned_tiny[0] = False
 
             pf.predict(state)
-            pf.update(rho, phi, state)
+            pf.update(rho, phi, state, in_range=in_range)
             changed = True
 
         # ---- one-shot requests ----------------------------------------
@@ -133,7 +136,7 @@ def main():
         true_robot.set_pose(*world.pose)
         true_robot.set_visible(state.showTrueRobot)
         rays.set(world.pose, rho, phi, state.lmask,
-                 state.use_range or state.use_bearing)
+                 state.use_range or state.use_bearing, in_range=in_range)
 
         # gaussian_approx() draws a fresh random sample of the particles, so
         # recomputing it every frame made the overlay jitter even when the

@@ -149,7 +149,7 @@ def main():
         live_rays = draw.RayArtist(ax)
         landmarks = draw.LandmarkMapArtist(ax, color="tab:red")
         ax.legend(loc="upper left", fontsize=8)
-        panel = draw.Panel(fig, flags=[("true robot", lambda s: s.showTrueRobot)])
+        panel = draw.Panel(fig, flags=[("true robot", lambda s: s.showTrueRobot)], pgo=True)
         keys.connect(fig, state, params, ax=ax, demo="pgo", pgo=True)
         if not args.snapshot:
             print(keys.help_text(pgo=True))
@@ -267,8 +267,8 @@ def main():
 
         rho_all, phi_all = models.range_bearing(world.xt, world.yt, world.at, params.xL, params.yL)
         in_range = rho_all <= state.maxRange
-        live_rays.set(world.pose, rho_all, phi_all, state.lmask & in_range,
-                       state.use_range and state.use_bearing)
+        live_rays.set(world.pose, rho_all, phi_all, state.lmask,
+                       state.use_range and state.use_bearing, in_range=in_range)
 
         togo = max(0.0, params.pgo_node_spacing - pg["dist_since_node"])
         panel.update(state, params,

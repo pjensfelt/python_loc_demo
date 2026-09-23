@@ -107,10 +107,15 @@ class ParticleFilter:
         self.X[0], self.X[1], self.X[2] = models.motion_model(
             self.X[0], self.X[1], self.X[2], D, DA)
 
-    def update(self, rho, phi, state: DemoState):
-        """Multiply each particle's weight by p(z | x)."""
+    def update(self, rho, phi, state: DemoState, in_range=None):
+        """Multiply each particle's weight by p(z | x).
+
+        `in_range[l]` False means that landmark is active (lmask) but
+        beyond max_rng, so not actually sensed this frame -- see
+        EKFLocalizer.update for the same convention.
+        """
         for l in range(self.p.NL):
-            if not state.lmask[l]:
+            if not state.lmask[l] or (in_range is not None and not in_range[l]):
                 continue
             xl, yl = self.p.xL[l], self.p.yL[l]
             zRho, zPhi = models.range_bearing(self.X[0], self.X[1], self.X[2], xl, yl)

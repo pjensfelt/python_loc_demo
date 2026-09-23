@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib as mpl
 
 from . import app
-from .params import DemoState, N_LADDER, V_STEP, V_MAX, W_STEP, W_MAX, TUNABLES
+from .params import DemoState, N_LADDER, V_STEP, V_MAX, W_STEP, W_MAX, TUNABLES, row_is_relevant
 
 # Below this gap between two presses of the *same* key, the second one is
 # dropped. A human tapping a key deliberately is never this fast, so this
@@ -129,6 +129,14 @@ def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_he
     def clamp(value, limit):
         return float(np.clip(value, -limit, limit))
 
+    # tab/shift-tab must only visit rows Panel.update() actually draws --
+    # otherwise it's easy to land the cursor on a row that's blanked out for
+    # this demo (see row_is_relevant), with no brackets anywhere to show
+    # what's selected. Computed once, not per keypress: relevance only
+    # depends on the flags this handler was built with, never on live state.
+    visible = [i for i, t in enumerate(TUNABLES)
+              if row_is_relevant(t.name, absolute=absolute, slam=slam, pgo=pgo)]
+
     last_press = {}
     held = set()
 
@@ -211,14 +219,16 @@ def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_he
 
         # ---- parameter editing ---------------------------------------
         elif k == "tab":
-            state.cursor = (state.cursor + 1) % len(TUNABLES)
+            pos = visible.index(state.cursor) if state.cursor in visible else -1
+            state.cursor = visible[(pos + 1) % len(visible)]
         elif "tab" in k.lower():
             # Shift-Tab's key string is backend- and platform-dependent --
             # "shift+tab" on some, the bare special name "backtab" on
             # others (e.g. macOS's native backend) -- so anything
             # Tab-flavoured that isn't plain "tab" is treated as the
             # backward step, rather than guessing at exact literals.
-            state.cursor = (state.cursor - 1) % len(TUNABLES)
+            pos = visible.index(state.cursor) if state.cursor in visible else 0
+            state.cursor = visible[(pos - 1) % len(visible)]
         elif k == ">":
             t = state.selected
             state.step(t.column, t.name, +1)

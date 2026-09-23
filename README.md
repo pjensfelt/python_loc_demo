@@ -148,6 +148,31 @@ compare that to how a same-sized `sig_td` looks (noisy, but centred on the
 truth). Then detune `B` instead and compare how much faster heading runs
 away.
 
+### Sensing range
+
+One more row, below the fixed-bias rows:
+
+```
+max_rng   inf
+```
+
+`max_rng` caps how far a landmark's sensor can physically see, in every one
+of the four demos, not just pose-graph SLAM: a landmark can be `1`..`4`
+*enabled* and still not actually get fused into a step, or mapped for the
+first time, if it's currently farther away than `max_rng`. A landmark like
+that draws as a short magenta stub pointing its direction instead of the
+full line to it or no line at all — enabled, just out of reach right now,
+which is a different thing from either "off" (no line) or "in range" (full
+line). Only the TRUE column exists here — how far a sensor can physically
+see isn't a belief the filter could hold a different, wrong opinion about,
+unlike noise.
+
+Try lowering it to `3` or `5` and driving a loop: landmarks blink between
+stub and full line as you pass near and away from them, exactly what makes
+"see a landmark again after being away for a while" (loop closure) a real
+event instead of something that's always true by default (the `inf`
+default).
+
 ## EKF
 
 ### Pure prediction
@@ -258,8 +283,9 @@ landmark position relative to the robot.
 
 ### Mapping and re-observing a landmark
 
-* Turn on one landmark (say `1`) and drive around a bit with `sig_rho = 0.1m`
-  and `sig_phi = 1°` in the model column.
+* Turn on one landmark (say `1`) and drive around a bit -- the model column
+  defaults to matching the true measurement noise here, unlike EKF/PF, so
+  there's nothing extra to set up first.
 * The first sighting places the landmark exactly where that one noisy reading
   says — an ellipse you'd need a very large plot to draw. Watch it shrink
   over the next several sightings as the estimate tightens.
@@ -360,9 +386,9 @@ to the dashed line and only moves when you press:
 
 ### Comparing to EKF-SLAM
 
-* Same noise settings and the same landmarks turned on (remember EKF-SLAM
-  defaults them on, this demo off), but drive the same kind of loop in
-  `run_ekfslam.py` first and compare: EKF-SLAM's estimate updates every
+* Same noise settings and the same landmarks turned on (both demos default
+  landmarks off now), but drive the same kind of loop in `run_ekfslam.py`
+  first and compare: EKF-SLAM's estimate updates every
   step, so you always have *some* answer, but the path it draws behind the
   robot is exactly whatever it believed at the time, never revised. The pose
   graph has no opinion at all about the poses in between two node presses,

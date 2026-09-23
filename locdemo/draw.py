@@ -13,7 +13,7 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import LinearSegmentedColormap
 
 from .params import (Params, DemoState, TUNABLES, PARAM_ROWS, FIRE_ONCE_ROWS,
-                     FIXED_MODEL_ROWS, SINGLE_ROWS)
+                     FIXED_MODEL_ROWS, SINGLE_ROWS, row_is_relevant)
 
 # --------------------------------------------------------------------------
 # Heading colour wheel
@@ -167,20 +167,42 @@ class GaussArtist:
 
 
 class RayArtist:
-    """The magenta lines from the true robot to each measured landmark."""
+    """The magenta lines from the true robot to each measured landmark.
+
+    A landmark beyond `max_rng` is drawn as a short floating dash pointing
+    the right direction rather than the full line to it or no line at all --
+    either of those would look identical to "this landmark is off" (mask[k]
+    False), when out-of-range is a different thing: the sensor is enabled
+    for it, it's just too far away to actually return a reading right now.
+    Floating a short way out from the robot, rather than starting right at
+    it, keeps it from getting lost among the true-robot marker and the
+    heading/angle-error lines that also live right at the robot's own
+    position.
+    """
+
+    STUB_NEAR = 0.8  # m -- where the dash starts
+    STUB_FAR = 1.2   # m -- where it ends; short enough to never look real
 
     def __init__(self, ax, color="m", lw=1):
         self.lc = LineCollection([], colors=color, linewidths=lw, zorder=3)
         ax.add_collection(self.lc)
 
-    def set(self, pose, rho, phi, mask, enabled):
+    def set(self, pose, rho, phi, mask, enabled, in_range=None):
         if not enabled:
             self.lc.set_segments([])
             return
         xt, yt, at = pose
-        segs = [[(xt, yt),
-                 (xt + rho[k] * np.cos(at + phi[k]), yt + rho[k] * np.sin(at + phi[k]))]
-                for k in range(len(rho)) if mask[k]]
+        segs = []
+        for k in range(len(rho)):
+            if not mask[k]:
+                continue
+            c, s = np.cos(at + phi[k]), np.sin(at + phi[k])
+            if in_range is None or in_range[k]:
+                segs.append([(xt, yt), (xt + rho[k] * c, yt + rho[k] * s)])
+            else:
+                near = min(self.STUB_NEAR, rho[k])
+                far = min(self.STUB_FAR, rho[k])
+                segs.append([(xt + near * c, yt + near * s), (xt + far * c, yt + far * s)])
         self.lc.set_segments(segs)
 
     @property
@@ -359,10 +381,17 @@ def setup_axes(fig, params: Params, title):
 class Panel:
     """Left-hand text panel: the true/model parameter table and the status."""
 
-    def __init__(self, fig, flags=()):
+    def __init__(self, fig, flags=(), absolute=False, slam=False, pgo=False):
         self.flags = flags
+        # Same absolute/slam/pgo flags keys.py wires its keys with -- a row
+        # whose key isn't wired for this demo (e.g. sig_cmp where 'y' isn't
+        # bound) is blanked out below rather than shown doing nothing.
+        self.absolute, self.slam, self.pgo = absolute, slam, pgo
         self.text = fig.text(0.015, 0.97, "", family="monospace", fontsize=9,
                              va="top", ha="left")
+
+    def _relevant(self, name):
+        return row_is_relevant(name, absolute=self.absolute, slam=self.slam, pgo=self.pgo)
 
     def update(self, state: DemoState, params: Params, extra=""):
         rows = ["        TRUE     MODEL", "        ----     -----"]
@@ -382,6 +411,9 @@ class Panel:
         # state to select here.
         rows.append("        (fire-once sensors)")
         for name in FIRE_ONCE_ROWS:
+            if not self._relevant(name):
+                rows.append("")
+                continue
             cells = []
             for column in ("true", "model"):
                 t = next(t for t in TUNABLES if t.key == (column, name))
@@ -396,6 +428,9 @@ class Panel:
         # editable ladder entry.
         rows.append("        (fixed bias)")
         for name in FIXED_MODEL_ROWS:
+            if not self._relevant(name):
+                rows.append("")
+                continue
             t = next(t for t in TUNABLES if t.key == ("true", name))
             sel = TUNABLES.index(t) == state.cursor
             true_txt = t.format(state.value("true", name))
@@ -407,6 +442,9 @@ class Panel:
         # every row above (even FIXED_MODEL_ROWS still shows a second,
         # read-only cell).
         for name in SINGLE_ROWS:
+            if not self._relevant(name):
+                rows.append("")
+                continue
             t = next(t for t in TUNABLES if t.key == ("true", name))
             sel = TUNABLES.index(t) == state.cursor
             txt = t.format(state.value("true", name))

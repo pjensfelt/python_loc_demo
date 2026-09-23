@@ -65,17 +65,21 @@ class EKFLocalizer:
 
         self.P = A @ self.P @ A.T + W @ Q @ W.T
 
-    def update(self, rho, phi, state: DemoState):
+    def update(self, rho, phi, state: DemoState, in_range=None):
         """Fuse the landmark measurements.
 
         All enabled measurements are stacked into one batch update, so H is
-        (m x 3) with one row per scalar measurement.
+        (m x 3) with one row per scalar measurement. `in_range[l]` is False
+        for a landmark beyond max_rng -- active (lmask) but not actually
+        sensed right now, same distinction RayArtist draws as a short stub
+        instead of a full ray. `in_range=None` (the default) skips this
+        gate entirely, for callers that don't model a max range at all.
         """
         H, R, innov = [], [], []
         x, y, a = self.X
 
         for l in range(self.p.NL):
-            if not state.lmask[l]:
+            if not state.lmask[l] or (in_range is not None and not in_range[l]):
                 continue
             xl, yl = self.p.xL[l], self.p.yL[l]
             zRho, zPhi = models.range_bearing(x, y, a, xl, yl)

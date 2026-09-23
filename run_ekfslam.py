@@ -22,6 +22,19 @@ def main():
 
     params = Params()
     state = DemoState(dispGaussApprox=True)
+    # Every other demo defaults model.rho/phi to "off" (dead reckoning
+    # first, measurements on deliberately) -- but EKF-SLAM's own update()
+    # returns immediately when both are off (see its docstring), so with
+    # lmask's own default of all-on this demo did *nothing* with landmarks
+    # out of the box: mapped none, fused none. Calibrate the model to the
+    # true noise instead (a properly-tuned filter, the "matched" case the
+    # EKF demo's own docs point you at with `l`), and default landmarks off
+    # instead, matching PGO's own "discover as you go" convention -- so
+    # turning one on with '1'..'4' is a deliberate, visible step rather
+    # than four landmarks appearing mapped on the very first frame.
+    state.set_value("model", "rho", state.value("true", "rho"))
+    state.set_value("model", "phi", state.value("true", "phi"))
+    state.lmask[:] = False
     app.apply_common_args(state, args)
 
     world = World(params, rng=rng)
@@ -40,7 +53,8 @@ def main():
         rays = draw.RayArtist(ax)
         panel = draw.Panel(fig, flags=[("95%-Gaussian", lambda s: s.dispGaussApprox),
                                        ("extero", lambda s: not s.extero_off),
-                                       ("true robot", lambda s: s.showTrueRobot)])
+                                       ("true robot", lambda s: s.showTrueRobot)],
+                           slam=True)
         keys.connect(fig, state, params, ax=ax, demo="ekfslam", particles=False, slam=True)
         if not args.snapshot:
             print(keys.help_text(particles=False, slam=True))
@@ -49,6 +63,8 @@ def main():
         # ---- simulation ------------------------------------------------
         world.step(state)
         rho, phi = world.measure(state)
+        # True distance, not the noisy rho reading -- see run_ekf.py.
+        in_range = np.hypot(world.xt - params.xL, world.yt - params.yL) <= state.maxRange
 
         # ---- filter ----------------------------------------------------
         if state.injectNoise:
@@ -63,7 +79,7 @@ def main():
             state.forceUpdate = False
             slam.predict(state)
             if do_update:
-                slam.update(rho, phi, state)
+                slam.update(rho, phi, state, in_range=in_range)
             if state.superGPS:
                 slam.super_gps_update(world.xt, world.yt)
         state.superGPS = False
@@ -92,7 +108,7 @@ def main():
         # it this frame. Only predict/update (above) are gated on moving or
         # a forced update.
         rays.set(world.pose, rho, phi, state.lmask,
-                 state.use_range or state.use_bearing)
+                 state.use_range or state.use_bearing, in_range=in_range)
         gauss.set_visible(state.dispGaussApprox)
         if state.dispGaussApprox:
             gauss.set(slam.X[:2], slam.P[:2, :2], slam.X[2], np.sqrt(slam.P[2, 2]))

@@ -282,6 +282,27 @@ FIXED_MODEL_ROWS = ["r", "B", "compass_bias"]
 # a confusing no-op.
 SINGLE_ROWS = ["maxrange"]
 
+
+def row_is_relevant(name: str, *, absolute: bool = False, slam: bool = False,
+                     pgo: bool = False) -> bool:
+    """Whether a PARAM_ROWS/FIRE_ONCE_ROWS/FIXED_MODEL_ROWS/SINGLE_ROWS row
+    actually does anything in a demo with these keys.py-style flags -- the
+    same flags keys.py already uses to decide which keys are wired up, so a
+    row is relevant exactly when its key is. 'compass'/'compass_bias' only
+    matter where 'y' is wired (EKF/PF, `absolute`); 'gps' matters anywhere
+    'G' is wired, which is `absolute` *or* `pgo` -- EKF-SLAM is the one
+    demo where it's neither, since its own 's' superGPS bypasses sig_gps
+    entirely with a hardcoded variance. 'maxrange' gates landmark sensing
+    in every demo (see World/EKFLocalizer.update/ParticleFilter.update/
+    EKFSLAM.update), so it's always relevant. Everything else (motion/
+    measurement noise, wheel r/B) is used by every demo too.
+    """
+    if name in ("compass", "compass_bias"):
+        return absolute
+    if name == "gps":
+        return absolute or pgo
+    return True
+
 # Particle counts offered by the 'n' / 'N' keys (was a popup menu).  The
 # filter math itself is vectorised and comfortably handles far more than
 # this top rung; what doesn't scale is drawing them, which is why

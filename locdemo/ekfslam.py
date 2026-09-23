@@ -93,7 +93,7 @@ class EKFSLAM:
         with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
             self.P = A @ self.P @ A.T + W @ Q @ W.T
 
-    def update(self, rho, phi, state: DemoState):
+    def update(self, rho, phi, state: DemoState, in_range=None):
         """Map any landmark seen for the first time, then fuse measurements.
 
         All enabled measurements of already-mapped landmarks are stacked
@@ -106,14 +106,19 @@ class EKFSLAM:
         "off") there is no way to ever fuse a new landmark's readings, so it
         would just sit in the state forever at its huge initial variance --
         this returns before mapping anything in that case, rather than
-        growing the state for no benefit.
+        growing the state for no benefit. `in_range[l]` False means active
+        (lmask) but beyond max_rng -- gates both mapping a new landmark and
+        fusing an already-mapped one, same convention as EKFLocalizer.update.
         """
         if not (state.use_range or state.use_bearing):
             return
 
+        def sensed(l):
+            return state.lmask[l] and (in_range is None or in_range[l])
+
         x, y, a = self.X[0], self.X[1], self.X[2]
         for l in range(self.p.NL):
-            if not state.lmask[l] or l in self.landmark_index:
+            if not sensed(l) or l in self.landmark_index:
                 continue
             self.landmark_index[l] = len(self.X)
             self.X = np.concatenate([self.X, [
@@ -131,7 +136,7 @@ class EKFSLAM:
         x, y, a = self.X[0], self.X[1], self.X[2]
 
         for l in range(self.p.NL):
-            if not state.lmask[l]:
+            if not sensed(l):
                 continue
             xpos = self.landmark_index[l]
             xl, yl = self.X[xpos], self.X[xpos + 1]
