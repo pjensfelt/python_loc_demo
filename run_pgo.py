@@ -39,6 +39,17 @@ def main():
 
     params = Params()
     state = DemoState(dispGaussApprox=False)
+    # Unlike EKF/PF/EKF-SLAM, where the uncertainty ellipse still visibly
+    # grows and shrinks from MODEL noise alone even with TRUE noise at its
+    # global default of zero, this demo's whole point -- the solid line
+    # drifting away, then snapping back on 'O' -- needs the raw odometry to
+    # actually be wrong. Since pg["odom"] is now a deterministic integration
+    # of commanded velocity (see step() below), that only happens with real
+    # TRUE motion noise, so this one demo gets a small nonzero TRUE default
+    # instead of the usual 0 -- just enough for clearly-imperfect,
+    # worth-optimizing drift, not a caricature of real wheel encoders.
+    for name in ("td", "rda", "rd"):
+        state.set_value("true", name, 0.05)
     # A GPS fix here only ever adds an edge -- nothing moves until the next
     # 'O' -- so, unlike EKF/PF's 1m default (chosen to not swamp their live,
     # continuously-drawn fix in this ~12m-wide world), a tighter, still
