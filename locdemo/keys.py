@@ -17,8 +17,20 @@ from .params import DemoState, N_LADDER, V_STEP, V_MAX, W_STEP, W_MAX, TUNABLES
 # dropped. A human tapping a key deliberately is never this fast, so this
 # only ever suppresses OS/window-manager key auto-repeat -- or, worse, a
 # stuck key event that keeps re-firing after you've let go, which otherwise
-# looks exactly like the filter "updating on its own".
+# looks exactly like the filter "updating on its own". This alone is not
+# enough on its own for a key held down *longer* than the gap, though: OS
+# auto-repeat still slips one press through roughly every _MIN_REPEAT_INTERVAL
+# for as long as the key stays down. That's fine for driving (holding an
+# arrow key is supposed to keep nudging v/w), but for a one-shot action --
+# especially 'G'/'y', whose effect on the particle weights *compounds* with
+# every repeat -- an accidental hold of a fraction of a second silently
+# fires the fix several times over, each one further decaying sum(w), with
+# no visible cause since the robot never moved. _CONTINUOUS_KEYS are exempt
+# from the stricter check below and keep the old repeat-while-held
+# behaviour; every other key only fires once per physical press, confirmed
+# by tracking actual key-release events rather than just a time gap.
 _MIN_REPEAT_INTERVAL = 0.15
+_CONTINUOUS_KEYS = {"up", "down", "left", "right"}
 
 # One key cycles both particle-colouring modes, rather than two independent
 # toggles -- "coloured by weight" and "coloured by heading" can never both be
@@ -105,11 +117,23 @@ def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_he
         return float(np.clip(value, -limit, limit))
 
     last_press = {}
+    held = set()
+
+    def release(event):
+        held.discard(event.key)
 
     def handler(event):
         k = event.key
         if k is None:
             return
+
+        if k not in _CONTINUOUS_KEYS:
+            if k in held:
+                # Still down from an earlier press -- this is OS auto-repeat,
+                # not a new physical press, so it doesn't fire again no
+                # matter how long the key stays held.
+                return
+            held.add(k)
 
         now = time.monotonic()
         if now - last_press.get(k, -1.0) < _MIN_REPEAT_INTERVAL:
@@ -212,12 +236,13 @@ def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_he
                 import matplotlib.pyplot as plt
                 plt.close(fig)
 
-    return handler
+    return handler, release
 
 
 def connect(fig, state: DemoState, params, ax=None, demo="demo", on_help=None,
             particles=False, slam=False, absolute=False):
     clear_default_keymap()
-    fig.canvas.mpl_connect("key_press_event",
-                           make_handler(state, params, fig, ax, demo, on_help,
-                                        particles, slam, absolute))
+    handler, release = make_handler(state, params, fig, ax, demo, on_help,
+                                     particles, slam, absolute)
+    fig.canvas.mpl_connect("key_press_event", handler)
+    fig.canvas.mpl_connect("key_release_event", release)
