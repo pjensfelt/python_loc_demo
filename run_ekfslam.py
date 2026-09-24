@@ -34,6 +34,17 @@ def main():
     # than four landmarks appearing mapped on the very first frame.
     state.set_value("model", "rho", state.value("true", "rho"))
     state.set_value("model", "phi", state.value("true", "phi"))
+    # Lower than the shared 0.25 default: EKF-SLAM's own linearisation gets
+    # noticeably less consistent at higher motion noise over any real
+    # distance (a landmark can end up confidently mapped several metres
+    # from where it actually is, well outside its own reported ellipse --
+    # not a bug, just how badly a wrong operating point hurts an EKF's own
+    # Jacobians), which makes loop closure a much less convincing demo. A
+    # smaller, matched value keeps drift real and worth correcting without
+    # tipping into that regime.
+    for name in ("td", "rda", "rd"):
+        state.set_value("true", name, 0.05)
+        state.set_value("model", name, 0.05)
     state.lmask[:] = False
     app.apply_common_args(state, args)
 

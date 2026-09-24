@@ -76,6 +76,12 @@ sig_cmp    5°       5°      compass fix noise (one-shot, `y`)
   function in the update step. `off` in the model column means the filter does
   not use that measurement type at all.
 
+`run_ekfslam.py` starts `sig_td`/`sig_rda`/`sig_rd` lower than this (0.05,
+matched on both sides) rather than the shared 0.25 default above: EKF-SLAM's
+own linearisation gets noticeably inconsistent at higher motion noise over
+real distance (see "Loop closure" below), which makes loop closure a much
+less convincing demo.
+
 Move the cursor with `tab`, change the selected value with `<` and `>`, and
 press `l` to copy a true value into the model column (`L` for every row).
 Press `x` to force both MODEL rows to `off` at once (and again to restore
@@ -320,6 +326,27 @@ landmark position relative to the robot.
   happens to everything correlated with it. Both the robot marker *and* the
   correlated landmark jump towards their true positions together, because
   the correlation you just built up carries the correction over.
+* Press `v` to see that correlation directly instead of inferring it from
+  `s`: every ellipse switches from absolute (world-frame) uncertainty to
+  uncertainty *relative to the robot*. A landmark that's well known
+  relative to the robot shows a much tighter ellipse this way, even while
+  its absolute ellipse (and the robot's own) is large — the shared, robot-
+  uncertainty-driven part of its error cancels out, leaving roughly just
+  the measurement noise from when it was fused. The robot's own ellipse
+  collapses to a point in this view: relative to itself, it's always known
+  exactly, however uncertain it is in the world frame.
+* That correlation isn't permanent, though. Map a landmark, turn it back
+  off, and drive a long way blind: press `v` occasionally and watch the
+  *relative* ellipse slowly grow, even though the landmark's absolute one
+  (`v` off) never changes at all while it isn't being re-observed — only
+  `predict()`'s own process noise on the robot's rows of `P` is moving, and
+  that's uncorrelated with a landmark that hasn't been touched since. The
+  bigger the model motion noise, the faster this dilutes: driving the same
+  distance with five times the process noise roughly doubled the relative
+  uncertainty in testing, versus barely growing it at all with the
+  smaller value — so a large `sig_td`/`sig_rda`/`sig_rd` erodes "I know
+  this landmark well relative to me" much faster per metre driven, on top
+  of growing the robot's own absolute uncertainty faster too.
 
 ### Loop closure
 
