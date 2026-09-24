@@ -401,12 +401,18 @@ to the dashed line and only moves when you press:
 
 ### A GPS fix
 
-* `G` adds a GPS edge on the *latest* pose node — a direct, absolute (x, y)
+* `G` closes out whatever's been driven since the last node into a *new*
+  node right there, then adds a GPS edge to it — a direct, absolute (x, y)
   reading, the only kind of edge here that isn't purely relative to another
-  node. It's how you tie the graph to the world's absolute frame instead of
-  just its own internal consistency, e.g. after driving with landmarks off
-  (dead reckoning only, no loop closure available) or to align a graph that
-  otherwise has no way to know where it started in the world.
+  node. Landing it on a fresh node instead of whatever the latest *existing*
+  one happens to be matters: nodes are only created every `pgo_node_spacing`,
+  so the latest existing one can be stale by almost a full spacing's worth
+  of driving -- wiring the fix to it would tie "where GPS says you are right
+  now" to a node that quietly claims to be somewhere else. It's how you tie
+  the graph to the world's absolute frame instead of just its own internal
+  consistency, e.g. after driving with landmarks off (dead reckoning only,
+  no loop closure available) or to align a graph that otherwise has no way
+  to know where it started in the world.
 * Like every other edge, pressing `G` doesn't move anything by itself —
   nothing happens until you press `O`.
 * Unlike EKF-SLAM's `s` (superGPS), this is deliberately *not* a

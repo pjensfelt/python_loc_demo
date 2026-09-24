@@ -148,6 +148,12 @@ def main():
         # actually see along the way.
         live_rays = draw.RayArtist(ax)
         landmarks = draw.LandmarkMapArtist(ax, color="tab:red")
+        # A green ring around a node's existing blue dot, not a colour
+        # already claimed by something else here (cyan is landmark edges,
+        # red is landmark estimates) -- marks which nodes carry a GPS edge,
+        # without hiding the dot itself underneath.
+        (gps_nodes,) = ax.plot([], [], "o", color="tab:green", ms=10, mew=2,
+                               markerfacecolor="none", zorder=5, label="GPS-fixed node")
         ax.legend(loc="upper left", fontsize=8)
         panel = draw.Panel(fig, flags=[("true robot", lambda s: s.showTrueRobot)], pgo=True)
         keys.connect(fig, state, params, ax=ax, demo="pgo", pgo=True)
@@ -185,7 +191,14 @@ def main():
             pg["P_seg"] = A @ pg["P_seg"] @ A.T + W @ Q @ W.T
             pg["dist_since_node"] += abs(state.tspeed) * params.dT
 
-        if pg["dist_since_node"] >= params.pgo_node_spacing:
+        def close_segment_into_node():
+            """Turn whatever's accumulated in pg["odom"]/pg["P_seg"] since
+            the last node into a new graph node, connected to the previous
+            one by an odom edge sized to *however much* actually happened --
+            not always a full pgo_node_spacing: a GPS press also closes the
+            segment early (see below), so the fix lands on a node that's
+            really here right now, not up to a full node-spacing stale.
+            """
             pi = pg["seg_start"]
             c, s = np.cos(pi[2]), np.sin(pi[2])
             dx, dy = pg["odom"][0] - pi[0], pg["odom"][1] - pi[1]
@@ -216,22 +229,35 @@ def main():
 
             pg["seg_start"] = pg["odom"].copy()
             pg["P_seg"] = np.zeros((3, 3))
+            return new_idx
+
+        if pg["dist_since_node"] >= params.pgo_node_spacing:
+            close_segment_into_node()
+            # Subtract rather than reset to 0: an overshoot past the
+            # threshold (e.g. 1.05m with a 1m spacing) carries over instead
+            # of being discarded, so nodes stay evenly spaced on average
+            # rather than drifting later with every step. A GPS-triggered
+            # close below has no such threshold to overshoot, so it resets
+            # to 0 outright instead.
             pg["dist_since_node"] -= params.pgo_node_spacing
 
         # ---- one-shot requests ------------------------------------------
         if state.injectGPS:
-            # Unlike EKF's gps_update, which folds the fix into the belief
-            # immediately, this only adds an edge -- nothing moves until the
-            # next 'O'. It anchors the *latest* node (the only one there's a
-            # live "here" to fix) with a realistic zGpsStd, not a near-zero
-            # variance: see PoseGraph.add_gps_edge for why a batch solver
-            # can't be handed a "trust this exactly" constraint the way a
-            # sequential filter can.
+            # Close the current segment into a fresh node first, so the fix
+            # lands on wherever the robot actually is right now rather than
+            # on the latest *existing* node, which could be up to a full
+            # pgo_node_spacing stale. Unlike EKF's gps_update, which folds
+            # the fix into the belief immediately, this only adds an edge --
+            # nothing moves until the next 'O'. It uses a realistic zGpsStd,
+            # not a near-zero variance: see PoseGraph.add_gps_edge for why a
+            # batch solver can't be handed a "trust this exactly" constraint
+            # the way a sequential filter can.
+            node = close_segment_into_node()
+            pg["dist_since_node"] = 0.0
             xg, yg = world.measure_gps(state)
             Omega_gps = np.diag([1 / state.zGpsStd ** 2, 1 / state.zGpsStd ** 2])
-            node = graph.n_poses - 1
             graph.add_gps_edge(node, xg, yg, Omega_gps)
-            print(f"GPS edge added at node {node}: ({xg:.3f}, {yg:.3f}) -- press 'O' to fold it in")
+            print(f"GPS edge added at new node {node}: ({xg:.3f}, {yg:.3f}) -- press 'O' to fold it in")
             state.injectGPS = False
         if state.optimizePGO:
             graph.optimize()
@@ -264,6 +290,9 @@ def main():
                                   for pi, k, *_ in graph.landmark_edges])
         landmarks.set([(graph.landmarks[k], np.zeros((2, 2)))
                        for k in sorted(graph.landmarks)], show_ellipse=False)
+        gps_idx = sorted({pi for pi, *_ in graph.gps_edges})
+        gps_nodes.set_data([graph.poses[i][0] for i in gps_idx],
+                           [graph.poses[i][1] for i in gps_idx])
 
         rho_all, phi_all = models.range_bearing(world.xt, world.yt, world.at, params.xL, params.yL)
         in_range = rho_all <= state.maxRange
@@ -278,7 +307,7 @@ def main():
                      f"lm edges   = {len(graph.landmark_edges)}\n"
                      f"gps edges  = {len(graph.gps_edges)}\n"
                      f"next node in {togo:.2f} m")
-        return (true_robot.artists + [pure_line, graph_line, sightlines] + live_rays.artists
+        return (true_robot.artists + [pure_line, graph_line, sightlines, gps_nodes] + live_rays.artists
                 + landmarks.artists + panel.artists)
 
     app.run(fig, state, step, params.dT, args.headless, args.steps, args.snapshot)
