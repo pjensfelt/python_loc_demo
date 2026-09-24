@@ -56,6 +56,60 @@ class EKFSLAM:
         return [(l, self.X[i:i + 2].copy(), self.P[i:i + 2, i:i + 2].copy())
                 for l, i in sorted(self.landmark_index.items())]
 
+    def mapped_landmarks_relative(self):
+        """Like mapped_landmarks, but each covariance is for the landmark's
+        position *relative to the robot* instead of its own absolute (world)
+        position -- var(landmark - robot), expressed in the robot's own
+        body frame and then rotated back to world-aligned axes so it still
+        overlays correctly on the map.
+
+        These two views can look very different: a landmark just fused from
+        a precise range/bearing reading is *tightly correlated* with
+        whatever the robot's pose belief was at that moment, so its own
+        absolute-position ellipse inherits most of the robot's own (often
+        much larger) positional uncertainty -- even though the landmark is
+        known very well relative to the robot. Subtracting out exactly the
+        shared part via the cross-covariance term below (not just the
+        marginal variances) is what recovers that -- it's the same
+        distinction the 'Correlation' section of the README walks through
+        interactively with 's' (superGPS), just computed directly instead
+        of watching it happen live.
+
+        The Jacobian here is the same rotation-into-relative-frame shape
+        used in PoseGraph.optimize()'s odometry edges and EKFLocalizer's
+        motion_jacobians -- d(relative x, relative y)/d(robot x, y, a) and
+        .../d(landmark x, y) -- just for a plain Cartesian difference
+        instead of a full pose delta or a range/bearing pair.
+        """
+        rx, ry, ra = self.X[0], self.X[1], self.X[2]
+        c, s = np.cos(ra), np.sin(ra)
+        R = np.array([[c, -s], [s, c]])
+        P_rr = self.P[:3, :3]
+
+        out = []
+        for l, i in sorted(self.landmark_index.items()):
+            lx, ly = self.X[i], self.X[i + 1]
+            dx, dy = lx - rx, ly - ry
+
+            J_robot = np.array([[-c, -s, -s * dx + c * dy],
+                                [s, -c, -c * dx - s * dy]])
+            J_lm = np.array([[c, s], [-s, c]])
+
+            P_rl = self.P[:3, i:i + 2]
+            P_ll = self.P[i:i + 2, i:i + 2]
+            Sigma_rel = (J_robot @ P_rr @ J_robot.T
+                        + J_robot @ P_rl @ J_lm.T
+                        + J_lm @ P_rl.T @ J_robot.T
+                        + J_lm @ P_ll @ J_lm.T)
+
+            # Rotate back to world-aligned axes to draw at the landmark's
+            # own position, same as R(-ra) then R(ra) leaving the *shape*
+            # unchanged for a purely linear difference -- but Sigma_rel
+            # above also carries the (nonlinear) contribution from not
+            # knowing ra itself, which this final rotation doesn't remove.
+            out.append((l, np.array([lx, ly]), R @ Sigma_rel @ R.T))
+        return out
+
     # ------------------------------------------------------------------
     def predict(self, state: DemoState):
         """Propagate robot pose and covariance; mapped landmarks don't move.

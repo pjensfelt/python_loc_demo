@@ -346,6 +346,16 @@ class DemoState:
 
     # Display / filter options
     dispGaussApprox: bool = False
+    # EKF-SLAM only: ellipses show absolute (world-frame) uncertainty by
+    # default -- toggling this switches to everything's uncertainty
+    # *relative to the robot* instead. A landmark's can look much tighter
+    # that way, if it's well known relative to the robot even while the
+    # robot's own position is quite uncertain (see
+    # EKFSLAM.mapped_landmarks_relative); the robot's own ellipse collapses
+    # to a point, since relative to itself its position and heading are
+    # known exactly, by definition, however uncertain they are in the
+    # world frame.
+    relativeUncertainty: bool = False
     # Particle colouring, one of "plain"/"weight"/"heading" -- a single mode
     # rather than two independent toggles, since "coloured by weight" and
     # "coloured by heading" can't both be true on screen at once anyway; two

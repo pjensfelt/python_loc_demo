@@ -421,6 +421,84 @@ def test_ekfslam_reset_clears_map():
 
 
 @test
+def test_ekfslam_relative_uncertainty_matches_monte_carlo():
+    """mapped_landmarks_relative's var(landmark - robot), propagated through
+    the full joint (robot, landmark) covariance via a first-order Jacobian,
+    must agree with sampling that same joint Gaussian directly and rotating
+    each sample into its own robot heading -- same kind of check as
+    test_ekf_covariance_matches_monte_carlo, just for a nonlinear (rotation)
+    transform instead of the motion model.
+    """
+    params = Params()
+    state = DemoState()
+    state.set_value("model", "rho", 0.05)
+    state.set_value("model", "phi", 1.0)
+    state.lmask[:] = False
+    state.lmask[0] = True
+
+    slam = EKFSLAM(params)
+    slam.P[:3, :3] = np.diag([1.0, 1.0, np.deg2rad(8.0) ** 2])
+    xl, yl = params.xL[0], params.yL[0]
+    rho = np.array([np.hypot(xl - slam.X[0], yl - slam.X[1]), 0, 0, 0])
+    phi = np.array([np.arctan2(yl - slam.X[1], xl - slam.X[0]) - slam.X[2], 0, 0, 0])
+    slam.update(rho, phi, state)
+
+    l, i = sorted(slam.landmark_index.items())[0]
+    idx = [0, 1, 2, i, i + 1]
+    mu_full = np.concatenate([slam.X[:3], slam.X[i:i + 2]])
+    P_full = slam.P[np.ix_(idx, idx)]
+
+    rng = np.random.default_rng(11)
+    n = 500000
+    samples = rng.multivariate_normal(mu_full, P_full, size=n)
+    rx, ry, ra, lx, ly = samples.T
+    dx, dy = lx - rx, ly - ry
+    c, s = np.cos(ra), np.sin(ra)
+    rel = np.vstack([c * dx + s * dy, -s * dx + c * dy])
+    P_mc = np.cov(rel)
+
+    _, mu_rel, Sigma_rel = [(ll, mu, S) for ll, mu, S in slam.mapped_landmarks_relative()
+                            if ll == l][0]
+    c0, s0 = np.cos(slam.X[2]), np.sin(slam.X[2])
+    R0 = np.array([[c0, -s0], [s0, c0]])
+    Sigma_bodyframe = R0.T @ Sigma_rel @ R0  # undo the display rotation to compare like for like
+
+    rel_err = np.abs(Sigma_bodyframe - P_mc) / np.maximum(np.abs(P_mc), 1e-6)
+    assert np.all(rel_err < 0.05), (Sigma_bodyframe, P_mc)
+
+
+@test
+def test_ekfslam_relative_uncertainty_tighter_than_absolute():
+    """The whole point of the robot-relative view: a landmark fused from a
+    precise reading, while the robot's own position is very uncertain,
+    should show a much *tighter* ellipse relative to the robot than its
+    absolute (world-frame) one -- the shared, robot-uncertainty-driven part
+    of its error cancels via the robot-landmark cross-covariance, leaving
+    roughly just the measurement noise.
+    """
+    params = Params()
+    state = DemoState()
+    state.set_value("model", "rho", 0.05)
+    state.set_value("model", "phi", 1.0)
+    state.lmask[:] = False
+    state.lmask[0] = True
+
+    slam = EKFSLAM(params)
+    slam.P[:3, :3] = np.diag([2.0, 2.0, np.deg2rad(5.0) ** 2])
+    xl, yl = params.xL[0], params.yL[0]
+    rho = np.array([np.hypot(xl - slam.X[0], yl - slam.X[1]), 0, 0, 0])
+    phi = np.array([np.arctan2(yl - slam.X[1], xl - slam.X[0]) - slam.X[2], 0, 0, 0])
+    slam.update(rho, phi, state)
+
+    _, mu_abs, Sigma_abs = slam.mapped_landmarks()[0]
+    _, mu_rel, Sigma_rel = slam.mapped_landmarks_relative()[0]
+
+    sig_abs = np.sqrt(np.diag(Sigma_abs)).mean()
+    sig_rel = np.sqrt(np.diag(Sigma_rel)).mean()
+    assert sig_rel < 0.3 * sig_abs, (sig_abs, sig_rel)
+
+
+@test
 def test_disturb_is_symmetric():
     params = Params()
     rng = np.random.default_rng(17)

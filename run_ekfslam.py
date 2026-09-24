@@ -53,6 +53,7 @@ def main():
         landmark_map = draw.LandmarkMapArtist(ax, color="r")
         rays = draw.RayArtist(ax)
         panel = draw.Panel(fig, flags=[("95%-Gaussian", lambda s: s.dispGaussApprox),
+                                       ("ellipses", lambda s: "robot-relative" if s.relativeUncertainty else "world"),
                                        ("extero", lambda s: not s.extero_off),
                                        ("true robot", lambda s: s.showTrueRobot)],
                            slam=True)
@@ -121,9 +122,19 @@ def main():
                  state.use_range or state.use_bearing, in_range=in_range)
         gauss.set_visible(state.dispGaussApprox)
         if state.dispGaussApprox:
-            gauss.set(slam.X[:2], slam.P[:2, :2], slam.X[2], np.sqrt(slam.P[2, 2]))
+            if state.relativeUncertainty:
+                # "Relative to the robot" applies to the robot itself too --
+                # its own position and heading relative to itself are known
+                # exactly (variance zero), by definition, however uncertain
+                # they are in the world frame. 1e-6 (not literal 0) matches
+                # EKFSLAM.P0's own "known exactly" convention, so the ellipse
+                # draws as a tiny but visible dot instead of vanishing.
+                gauss.set(slam.X[:2], 1e-6 * np.eye(2), slam.X[2], 1e-6)
+            else:
+                gauss.set(slam.X[:2], slam.P[:2, :2], slam.X[2], np.sqrt(slam.P[2, 2]))
 
-        mapped = slam.mapped_landmarks()
+        mapped = (slam.mapped_landmarks_relative() if state.relativeUncertainty
+                 else slam.mapped_landmarks())
         landmark_map.set([(mu, Sigma) for _, mu, Sigma in mapped], state.dispGaussApprox)
 
         err = np.hypot(slam.X[0] - world.xt, slam.X[1] - world.yt)

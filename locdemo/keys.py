@@ -63,7 +63,8 @@ _PF_ONLY = """
                        (slow at high N)"""
 
 _SLAM_ONLY = """
-                    s  superGPS fix (SLAM)"""
+                    s  superGPS fix (SLAM)
+                    v  ellipses: world / robot-relative"""
 
 _ABSOLUTE_ONLY = """
                     G  GPS fix (once)         y  compass fix (once)"""
@@ -207,6 +208,8 @@ def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_he
         # ---- toggles -------------------------------------------------
         elif k == "g":
             state.dispGaussApprox = not state.dispGaussApprox
+        elif k == "v" and slam:
+            state.relativeUncertainty = not state.relativeUncertainty
         elif k == "x":
             state.toggle_extero()
         elif k == "t":
