@@ -346,6 +346,90 @@ class LandmarkMapArtist:
         return out
 
 
+class CovarianceArtist:
+    """Heatmap of a filter's full covariance matrix, in the same corner
+    spot PF's heading-wheel legend uses -- fixed at 3x3 for EKF, growing
+    from 3x3 to 3+2*NL for EKF-SLAM as landmarks join the state.
+
+    Shows the *correlation* matrix (each entry normalised by its row and
+    column standard deviations), not raw covariance: position variance
+    (m^2), heading variance (rad^2) and landmark blocks live on wildly
+    different scales, which would bury the actual structure -- which
+    blocks are correlated with which, and how strongly -- under whichever
+    block happens to have the biggest raw numbers. Correlation is bounded
+    in [-1, 1] regardless of scale, so a diverging colormap centred at 0
+    reads directly: this is the same "how correlated is this landmark
+    with the robot" question 'v' (EKFSLAM.mapped_landmarks_relative)
+    answers for one landmark's ellipse at a time, here for every block at
+    once.
+
+    Rows/columns are drawn in the state vector's own physical order --
+    the robot's 3, then each landmark's 2 in *first-observed* order, not
+    landmark-id order, since that's what the real matrix looks like and
+    landmarks don't all get mapped in id order. Each landmark block is
+    labelled with its id (1-4), matching the numbers already drawn next
+    to the true landmark dots on the map, so there's no separate legend
+    to cross-reference.
+    """
+
+    def __init__(self, ax):
+        self.ax = ax
+        self.im = None
+        self.lines = []
+        self.texts = []
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+    def set(self, P, blocks):
+        """`blocks` is a list of (label, size) pairs, e.g.
+        [("x", 1), ("y", 1), ("θ", 1), ("2", 2), ("1", 2)] -- one
+        entry per row/column group, in the matrix's own physical order,
+        sizes summing to len(P).
+        """
+        n = P.shape[0]
+        sd = np.sqrt(np.maximum(np.diag(P), 1e-12))
+        corr = np.clip(P / np.outer(sd, sd), -1.0, 1.0)
+
+        for artist in self.lines + self.texts:
+            artist.remove()
+        self.lines, self.texts = [], []
+
+        if self.im is None or self.im.get_array().shape != (n, n):
+            if self.im is not None:
+                self.im.remove()
+            # "coolwarm" (Moreland's diverging map), not RdBu_r: RdBu_r is a
+            # handful of ColorBrewer stops interpolated between, which can
+            # read as distinct colour patches rather than one flowing
+            # gradient -- coolwarm is built specifically for a smooth,
+            # perceptually continuous path from blue through a neutral
+            # midpoint to red.
+            self.im = self.ax.imshow(corr, cmap="coolwarm", vmin=-1.0, vmax=1.0,
+                                     origin="upper", extent=(0, n, n, 0), zorder=1)
+        else:
+            self.im.set_data(corr)
+
+        pos = 0
+        for label, size in blocks:
+            if pos > 0:
+                self.lines.append(self.ax.axhline(pos, color="k", lw=0.6, zorder=2))
+                self.lines.append(self.ax.axvline(pos, color="k", lw=0.6, zorder=2))
+            mid = pos + size / 2
+            self.texts.append(self.ax.text(-0.4, mid, label, ha="right", va="center",
+                                            fontsize=7))
+            self.texts.append(self.ax.text(mid, -0.4, label, ha="center", va="bottom",
+                                            fontsize=7))
+            pos += size
+        self.ax.set_xlim(0, n)
+        self.ax.set_ylim(n, 0)
+
+    @property
+    def artists(self):
+        out = [self.im] if self.im is not None else []
+        return out + self.lines + self.texts
+
+
 class PointArtist:
     """A single estimated position, drawn as a dot."""
 

@@ -41,6 +41,8 @@ def main():
         estimate = draw.PointArtist(ax, color="b")
         gauss = draw.GaussArtist(ax, color="b")
         rays = draw.RayArtist(ax)
+        cov_ax = fig.add_axes([0.03, 0.02, 0.20, 0.20])
+        cov = draw.CovarianceArtist(cov_ax)
         panel = draw.Panel(fig, flags=[("95%-Gaussian", lambda s: s.dispGaussApprox),
                                        ("extero", lambda s: not s.extero_off),
                                        ("true robot", lambda s: s.showTrueRobot)],
@@ -114,11 +116,12 @@ def main():
         gauss.set_visible(state.dispGaussApprox)
         if state.dispGaussApprox:
             gauss.set(ekf.X[:2], ekf.P[:2, :2], ekf.X[2], np.sqrt(ekf.P[2, 2]))
+        cov.set(ekf.P, [("x", 1), ("y", 1), ("θ", 1)])
         err = np.hypot(ekf.X[0] - world.xt, ekf.X[1] - world.yt)
         panel.update(state, params, f"error   = {err:.3f} m\nsig_x,y = "
                             f"{np.sqrt(ekf.P[0,0]):.3f}, {np.sqrt(ekf.P[1,1]):.3f} m")
         return (true_robot.artists + estimate.artists + gauss.artists
-                + rays.artists + panel.artists)
+                + rays.artists + cov.artists + panel.artists)
 
     app.run(fig, state, step, params.dT, args.headless, args.steps, args.snapshot)
 

@@ -63,6 +63,8 @@ def main():
         gauss = draw.GaussArtist(ax, color="b")
         landmark_map = draw.LandmarkMapArtist(ax, color="r")
         rays = draw.RayArtist(ax)
+        cov_ax = fig.add_axes([0.03, 0.02, 0.20, 0.20])
+        cov = draw.CovarianceArtist(cov_ax)
         panel = draw.Panel(fig, flags=[("95%-Gaussian", lambda s: s.dispGaussApprox),
                                        ("ellipses", lambda s: "robot-relative" if s.relativeUncertainty else "world"),
                                        ("extero", lambda s: not s.extero_off),
@@ -148,13 +150,21 @@ def main():
                  else slam.mapped_landmarks())
         landmark_map.set([(mu, Sigma) for _, mu, Sigma in mapped], state.dispGaussApprox)
 
+        # Blocks in the state vector's own physical order (first-observed,
+        # not landmark id) -- labelled by id (1-4) so each block matches
+        # the same number already drawn next to that landmark's true dot.
+        blocks = [("x", 1), ("y", 1), ("θ", 1)]
+        for l, _ in sorted(slam.landmark_index.items(), key=lambda kv: kv[1]):
+            blocks.append((str(l + 1), 2))
+        cov.set(slam.P, blocks)
+
         err = np.hypot(slam.X[0] - world.xt, slam.X[1] - world.yt)
         panel.update(state, params, f"error   = {err:.3f} m\nsig_x,y = "
                             f"{np.sqrt(slam.P[0,0]):.3f}, {np.sqrt(slam.P[1,1]):.3f} m\n"
                             f"mapped  = {len(mapped)}/{params.NL}\n"
                             f"state   = {len(slam.X)} (3 + 2 per mapped landmark)")
         return (true_robot.artists + estimate.artists + gauss.artists
-                + rays.artists + landmark_map.artists + panel.artists)
+                + rays.artists + landmark_map.artists + cov.artists + panel.artists)
 
     app.run(fig, state, step, params.dT, args.headless, args.steps, args.snapshot)
 
