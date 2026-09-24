@@ -40,8 +40,8 @@ for the key list at any time.
 | `q` | quit | `p` | resampling on/off (PF only) |
 | `t` | true robot on/off | `o` | resample once (PF only) |
 | `S` | screenshot (2 PNGs, in `snapshots/`) | `n` / `N` | fewer / more particles (PF only) |
-| | | `s` | superGPS fix (SLAM only) |
-| | | `G` / `y` | GPS / compass fix, once (EKF/PF only); `G` also adds a GPS edge (PGO only) |
+| `H` | set home (`r` returns here) | `s` | superGPS fix (SLAM only) |
+| `R` | clear home (back to 0,0,0) | `G` / `y` | GPS / compass fix, once (EKF/PF only); `G` also adds a GPS edge (PGO only) |
 | | | `O` | optimize the pose graph, once (PGO only) |
 
 `run_ekf.py`, `run_pf.py`, `run_ekfslam.py` and `run_pgo.py` each only wire
@@ -214,6 +214,15 @@ allowed to move the estimate.
 * Reset with `r` and drive a while.
 * Press `d` to displace the true robot. Does the filter find its way back?
 * Press `i` to inflate `P`, and try again. Why does that help?
+
+For a lecture, `--x0`/`--y0`/`--theta0` sets the true robot's starting pose
+without needing a live `d` press: the filter's belief always starts at its
+own `[0,0,0]` regardless, so a non-default starting pose is already
+"disturbed" from frame one, and `r` keeps returning to that same mismatch
+instead of the origin. `H` does the same thing interactively -- drive (or
+disturb) to wherever you want, press `H`, and `r` returns there from then
+on, no need to pick coordinates in advance on the command line. `R` clears
+it back to `(0, 0, 0)`.
 
 ### Global localization
 
@@ -429,7 +438,19 @@ to the dashed line and only moves when you press:
   no GPS edge (nothing to correct, the raw odometry chain is already its own
   optimum), then press `G` followed by `O` — the graph should nudge towards
   the fix, by an amount that depends on how much odometry uncertainty has
-  built up between the anchored first pose and the one you fixed.
+  built up between the fixed first pose and the one you fixed.
+* One GPS fix can only nudge the graph, not fully align it: a single
+  absolute (x, y) point pins translation but leaves rotation about that
+  point undetermined, so pose 0 stays the gauge anchor exactly as with no
+  GPS edges at all. Press `G` a *second* time somewhere else and `O` again,
+  though, and pose 0 stops being pinned — two point correspondences fully
+  determine the rigid transform between the graph's own frame and the
+  world's, so the *whole* graph re-aligns, not just whatever's downstream
+  of the first fix. This matters if you started the true robot away from
+  the origin (`--x0`/`--y0`/`--theta0`, or `H`): the graph itself always
+  starts at its own `(0, 0, 0)` regardless, so without a second GPS fix,
+  the poses before the first fix stay stuck in that arbitrary, wrongly
+  oriented frame even after `O`.
 
 ### Data association is still assumed away
 
@@ -533,6 +554,8 @@ lecture:
     --set model.rho=0.1 --set model.phi=1.0 --landmarks 1111
 .venv/bin/python run_pgo.py --snapshot pgo.png --steps 600 --v 0.5 --w 8 \
     --set model.rho=0.1 --set model.phi=1.0 --landmarks 1111
+.venv/bin/python run_ekf.py --snapshot localize.png --steps 200 --v 0.4 \
+    --x0 3 --y0 2 --theta0 45  # true robot starts away from the filter's belief
 ```
 
 `run_pgo.py --snapshot` drives and builds the graph for `--steps` steps but,

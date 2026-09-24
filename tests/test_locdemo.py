@@ -605,14 +605,54 @@ def test_pgo_gps_edge_improves_position():
 
 @test
 def test_pgo_gps_edge_on_pose_zero_is_noop():
-    """Pose 0 is the gauge anchor and is never a free variable -- a GPS
-    edge on it should be silently skipped, not crash or fight the anchor."""
+    """With only one GPS edge total, pose 0 stays the gauge anchor (one
+    absolute point fixes translation but leaves rotation about it
+    undetermined) -- so a GPS edge on pose 0 itself should be silently
+    skipped, not crash or fight the anchor."""
     rng = np.random.default_rng(2)
     g, true_poses, _ = _pgo_synthetic_loop(rng)
     g.add_gps_edge(0, 100.0, 100.0, np.eye(2))
     pose0_before = g.poses[0].copy()
     g.optimize(iterations=10)
     assert np.array_equal(g.poses[0], pose0_before)
+
+
+@test
+def test_pgo_two_gps_edges_realign_whole_graph():
+    """Two GPS fixes on different poses fully determine the graph's own
+    rigid-body offset from the world frame (two point correspondences fix
+    both translation and rotation) -- so pose 0, and every pose before the
+    first GPS-fixed one, should realign too, not stay pinned to wherever
+    the graph happened to start. This is exactly the mismatch a non-zero
+    --x0/--y0/--theta0 home pose creates in run_pgo.py, since the graph
+    always starts at its own (0,0,0) regardless of where the true robot
+    actually started.
+    """
+    g = PoseGraph()
+    for k in range(5):
+        g.add_pose(float(k), 0.0, 0.0)
+    Omega_odom = np.diag([1 / 0.01 ** 2, 1 / 0.01 ** 2, 1 / np.deg2rad(0.5) ** 2])
+    for k in range(4):
+        g.add_odom_edge(k, k + 1, [1.0, 0.0, 0.0], Omega_odom)
+
+    # A known rigid transform between the graph's own frame and "the world".
+    tx, ty, ttheta = 3.48, 1.29, np.deg2rad(41.3)
+    c, s = np.cos(ttheta), np.sin(ttheta)
+
+    def to_world(x, y):
+        return tx + c * x - s * y, ty + s * x + c * y
+
+    Omega_gps = np.diag([1 / 0.01 ** 2, 1 / 0.01 ** 2])
+    for idx in (1, 4):
+        wx, wy = to_world(float(idx), 0.0)
+        g.add_gps_edge(idx, wx, wy, Omega_gps)
+
+    g.optimize(iterations=30)
+
+    for k in range(5):
+        wx, wy = to_world(float(k), 0.0)
+        err = np.hypot(g.poses[k][0] - wx, g.poses[k][1] - wy)
+        assert err < 0.05, (k, g.poses[k], (wx, wy))
 
 
 def main():

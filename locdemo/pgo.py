@@ -94,17 +94,32 @@ class PoseGraph:
     # ------------------------------------------------------------------
     def optimize(self, iterations=15, damping=1e-6):
         """Gauss-Newton, in place. Pose 0 is held fixed as the gauge anchor
-        -- a pose graph has no absolute reference otherwise, since every
-        edge only constrains *relative* poses or relative observations.
-        Pinning one pose (3 DOF: x, y, heading) is exactly enough to remove
-        that freedom for a rigid 2D graph, poses and landmarks alike.
+        by default -- a pose graph has no absolute reference otherwise,
+        since every edge only constrains *relative* poses or relative
+        observations, and pinning one pose (3 DOF: x, y, heading) is
+        exactly enough to remove that freedom for a rigid 2D graph, poses
+        and landmarks alike.
+
+        That stops being true once there are enough GPS edges to pin down
+        the graph's absolute position *and* orientation on their own: two
+        GPS fixes on different poses is enough (two point correspondences
+        determine a 2D rigid transform), one isn't (a single point fixes
+        translation but leaves rotation about it free). With two or more,
+        pose 0 joins the free variables too, so the *whole* graph -- not
+        just whatever's downstream of the first GPS-fixed pose -- can
+        rotate and translate to match the absolute frame the GPS edges
+        establish. Forcibly keeping pose 0 fixed here would leave the
+        prefix of the graph rigidly wrong, unable to ever line up with a
+        part of the graph that's already found the right frame.
         """
         if self.n_poses < 2:
             return
 
+        free_pose0 = len({pi for pi, *_ in self.gps_edges}) >= 2
+
         landmark_keys = sorted(self.landmarks)
         pose_offset, off = {}, 0
-        for i in range(1, self.n_poses):
+        for i in range(0 if free_pose0 else 1, self.n_poses):
             pose_offset[i] = off
             off += 3
         lm_offset = {}
@@ -116,13 +131,13 @@ class PoseGraph:
             return
 
         x = np.zeros(n)
-        for i in range(1, self.n_poses):
+        for i in pose_offset:
             x[pose_offset[i]:pose_offset[i] + 3] = self.poses[i]
         for k in landmark_keys:
             x[lm_offset[k]:lm_offset[k] + 2] = self.landmarks[k]
 
         def pose_at(i):
-            return self.poses[0] if i == 0 else x[pose_offset[i]:pose_offset[i] + 3]
+            return x[pose_offset[i]:pose_offset[i] + 3] if i in pose_offset else self.poses[0]
 
         def lm_at(k):
             return x[lm_offset[k]:lm_offset[k] + 2]
@@ -150,9 +165,9 @@ class PoseGraph:
                                        [0.0, 0.0, -1.0]])
 
                 blocks = []
-                if i != 0:
+                if i in pose_offset:
                     blocks.append((pose_offset[i], -dpred_dpi))
-                if j != 0:
+                if j in pose_offset:
                     blocks.append((pose_offset[j], -dpred_dpj))
                 if blocks:
                     _accumulate(H, b, e, Omega, blocks)
@@ -173,14 +188,14 @@ class PoseGraph:
                 dpred_dlm = -dpred_dpose[:, :2]
 
                 blocks = []
-                if pose_i != 0:
+                if pose_i in pose_offset:
                     blocks.append((pose_offset[pose_i], -dpred_dpose))
                 blocks.append((lm_offset[k], -dpred_dlm))
                 _accumulate(H, b, e, Omega, blocks)
 
             for pose_i, x_meas, y_meas, Omega in self.gps_edges:
-                if pose_i == 0:
-                    continue  # already exactly (x_meas, y_meas)'s best case: pinned there anyway
+                if pose_i not in pose_offset:
+                    continue  # pose 0, and pose 0 alone isn't free: pinned there anyway
                 p = pose_at(pose_i)
                 e = np.array([x_meas - p[0], y_meas - p[1]])
                 dpred_dpose = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
@@ -189,10 +204,10 @@ class PoseGraph:
             H += damping * np.eye(n)
             dx = np.linalg.solve(H, -b)
             x += dx
-            for i in range(1, self.n_poses):
+            for i in pose_offset:
                 x[pose_offset[i] + 2] = models.wrap_angle(x[pose_offset[i] + 2])
 
-        for i in range(1, self.n_poses):
+        for i in pose_offset:
             self.poses[i] = x[pose_offset[i]:pose_offset[i] + 3]
         for k in landmark_keys:
             self.landmarks[k] = x[lm_offset[k]:lm_offset[k] + 2]

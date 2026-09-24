@@ -69,8 +69,8 @@ class Params:
     yL: np.ndarray = field(default_factory=lambda: np.array([-0.5, -0.5, 10.5, 10.5]))
 
     # Axis limits, also used as the support of the uniform distribution
-    xlim: tuple = (-1.0, 11.0)
-    ylim: tuple = (-1.0, 11.0)
+    xlim: tuple = (-2.0, 12.0)
+    ylim: tuple = (-2.0, 12.0)
 
     @property
     def NL(self) -> int:
@@ -235,7 +235,7 @@ TUNABLES: List[Tunable] = [
     Tunable("phi", "model", "sig_phi", _PHI_MODEL, 0, "deg"),
     # GPS: one-shot absolute position fix -- no "off", see _GPS_TRUE above
     # Default 1m, not the 5m a real uncorrected consumer GPS would have:
-    # the world here is only ~12m across (see Params.xlim/ylim), so a 5m
+    # the world here is only ~14m across (see Params.xlim/ylim), so a 5m
     # std routinely lands a reading several metres from the true robot --
     # correct given that sigma, but it swamps the whole map and makes a
     # single fix look broken by default. 5/10 stay on the ladder for
@@ -338,6 +338,8 @@ class DemoState:
     injectGPS: bool = False
     injectCompass: bool = False
     optimizePGO: bool = False
+    setHome: bool = False
+    clearHome: bool = False
 
     # Which landmarks are in use
     lmask: np.ndarray = field(default_factory=lambda: np.ones(4, dtype=bool))

@@ -17,10 +17,17 @@ class World:
     def __init__(self, params: Params, rng=None):
         self.p = params
         self.rng = np.random.default_rng() if rng is None else rng
+        # Where 'r' (and startup) puts the true robot -- (0,0,0) unless
+        # overridden by --x0/--y0/--theta0 (see app.apply_start_pose). Any
+        # filter's own belief always starts at its own [0,0,0] regardless,
+        # so a non-default start_pose is a clean, repeatable way to
+        # illustrate localization converging from a known offset, without
+        # needing to press 'd' live.
+        self.start_pose = (0.0, 0.0, 0.0)
         self.reset()
 
     def reset(self):
-        self.xt, self.yt, self.at = 0.0, 0.0, 0.0
+        self.xt, self.yt, self.at = self.start_pose
 
     @property
     def pose(self):

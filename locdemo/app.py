@@ -48,6 +48,10 @@ def common_args(description, particles=False):
                     help="run --steps steps offscreen and save the final frame")
     ap.add_argument("--v", type=float, default=0.0, help="initial speed [m/s]")
     ap.add_argument("--w", type=float, default=0.0, help="initial turn rate [deg/s]")
+    ap.add_argument("--x0", type=float, default=0.0, help="true robot's starting x [m]")
+    ap.add_argument("--y0", type=float, default=0.0, help="true robot's starting y [m]")
+    ap.add_argument("--theta0", type=float, default=0.0,
+                    help="true robot's starting heading [deg]")
     ap.add_argument("--set", action="append", default=[], metavar="COL.NAME=VALUE",
                     help="preset a tunable, e.g. --set model.rho=1.0 --set true.td=0.1 "
                          "(angles in degrees, negative means off)")
@@ -80,6 +84,22 @@ def apply_common_args(state, args):
     if args.landmarks:
         for i, ch in enumerate(args.landmarks[:len(state.lmask)]):
             state.lmask[i] = ch not in "0nN"
+
+
+def apply_start_pose(world, args):
+    """Set the TRUE robot's starting pose from --x0/--y0/--theta0.
+
+    Applied on every reset too (see World.reset), not just at launch, so
+    'r' replays the same starting mismatch instead of snapping back to the
+    origin. The filter's own belief is untouched -- it always starts at its
+    usual [0,0,0] -- which is exactly what makes a non-default start_pose a
+    clean way to illustrate localization converging from a known offset,
+    without needing to press 'd' live.
+    """
+    if (args.x0, args.y0, args.theta0) == (0.0, 0.0, 0.0):
+        return
+    world.start_pose = (args.x0, args.y0, np.deg2rad(args.theta0))
+    world.reset()
 
 
 def pyplot(args):

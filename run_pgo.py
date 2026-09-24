@@ -45,14 +45,16 @@ def main():
     # drifting away, then snapping back on 'O' -- needs the raw odometry to
     # actually be wrong. Since pg["odom"] is now a deterministic integration
     # of commanded velocity (see step() below), that only happens with real
-    # TRUE motion noise, so this one demo gets a small nonzero TRUE default
-    # instead of the usual 0 -- just enough for clearly-imperfect,
-    # worth-optimizing drift, not a caricature of real wheel encoders.
+    # TRUE motion noise, so this one demo gets a nonzero TRUE default
+    # instead of the usual 0 -- matched to MODEL's own 0.25 default, same
+    # process noise on both sides, like every other demo's "matched filter"
+    # starting point.
     for name in ("td", "rda", "rd"):
-        state.set_value("true", name, 0.05)
+        state.set_value("true", name, 0.25)
+        state.set_value("model", name, 0.25)
     # A GPS fix here only ever adds an edge -- nothing moves until the next
     # 'O' -- so, unlike EKF/PF's 1m default (chosen to not swamp their live,
-    # continuously-drawn fix in this ~12m-wide world), a tighter, still
+    # continuously-drawn fix in this ~14m-wide world), a tighter, still
     # realistic 0.1m default makes a single 'G' press actually worth
     # pressing: good enough to visibly anchor the graph without being the
     # near-infinite "super" fix add_gps_edge deliberately avoids.
@@ -75,6 +77,7 @@ def main():
     app.apply_common_args(state, args)
 
     world = World(params, rng=rng)
+    app.apply_start_pose(world, args)
 
     def sense_landmarks(graph, pose_idx, gx, gy, ga):
         """Add a landmark edge (mapping it too, if this is its first
@@ -272,6 +275,15 @@ def main():
         if state.addDisturbance:
             world.disturb()
             state.addDisturbance = False
+        if state.setHome:
+            world.start_pose = world.pose
+            print("home pose set -- pass this to start here next time:")
+            print(f"--x0 {world.xt:.2f} --y0 {world.yt:.2f} --theta0 {np.rad2deg(world.at):.1f}")
+            state.setHome = False
+        if state.clearHome:
+            world.start_pose = (0.0, 0.0, 0.0)
+            print("home pose cleared: (0.00, 0.00, 0.0 deg)")
+            state.clearHome = False
 
         if fig is None:
             return []

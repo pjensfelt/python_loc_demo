@@ -3,6 +3,10 @@
 
     python run_pf.py --particles 1000
     python run_pf.py --headless --steps 300 --seed 1 --v 0.5 --set model.rho=1.0
+    python run_pf.py --x0 3 --y0 2 --theta0 45   start the true robot away
+                                                  from the particles' [0,0,0]
+                                                  prior, to illustrate
+                                                  localization without 'd'
 
 Press 'h' in the window (or see README.md) for the key bindings.
 """
@@ -26,6 +30,7 @@ def main():
     app.apply_common_args(state, args)
 
     world = World(params, rng=rng)
+    app.apply_start_pose(world, args)
     pf = ParticleFilter(params, N=args.particles, rng=rng)
 
     fig = None
@@ -102,6 +107,15 @@ def main():
         if state.addDisturbance:
             world.disturb()
             state.addDisturbance = False
+        if state.setHome:
+            world.start_pose = world.pose
+            print("home pose set -- pass this to start here next time:")
+            print(f"--x0 {world.xt:.2f} --y0 {world.yt:.2f} --theta0 {np.rad2deg(world.at):.1f}")
+            state.setHome = False
+        if state.clearHome:
+            world.start_pose = (0.0, 0.0, 0.0)
+            print("home pose cleared: (0.00, 0.00, 0.0 deg)")
+            state.clearHome = False
         if state.resampleOnce:
             pf.resample_now()
             state.resampleOnce = False

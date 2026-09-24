@@ -49,7 +49,9 @@ _COMMON_HELP = """
  1..4  toggle       g  Gaussian overlay     l     zero bias (this row)
        landmark     x  extero. noise on/off L     zero bias (all rows)
  h     this help    t  true robot on/off
- q     quit         S  screenshot (2 pngs)"""
+ q     quit         S  screenshot (2 pngs)
+                    H  set home (r returns here)
+                    R  clear home (back to 0,0,0)"""
 
 _EKF_ONLY = """
                     i  inject noise (EKF/SLAM)"""
@@ -183,6 +185,10 @@ def make_handler(state: DemoState, params, fig=None, ax=None, demo="demo", on_he
             state.setUniform = True
         elif k == "d":
             state.addDisturbance = True
+        elif k == "H":
+            state.setHome = True
+        elif k == "R":
+            state.clearHome = True
         elif k == "i" and not particles and not pgo:
             state.injectNoise = True
         elif k == "enter":

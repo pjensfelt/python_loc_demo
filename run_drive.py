@@ -35,6 +35,7 @@ def main():
     app.apply_common_args(state, args)
 
     world = World(params, rng=rng)
+    app.apply_start_pose(world, args)
 
     n = args.samples if args.mode == "montecarlo" else 1
     X = np.zeros((3, n))
@@ -77,6 +78,15 @@ def main():
         if state.addDisturbance:
             world.disturb()
             state.addDisturbance = False
+        if state.setHome:
+            world.start_pose = world.pose
+            print("home pose set -- pass this to start here next time:")
+            print(f"--x0 {world.xt:.2f} --y0 {world.yt:.2f} --theta0 {np.rad2deg(world.at):.1f}")
+            state.setHome = False
+        if state.clearHome:
+            world.start_pose = (0.0, 0.0, 0.0)
+            print("home pose cleared: (0.00, 0.00, 0.0 deg)")
+            state.clearHome = False
 
         if fig is None:
             return []
