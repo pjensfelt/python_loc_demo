@@ -9,8 +9,9 @@ from itertools import accumulate
 
 import matplotlib
 import numpy as np
+from matplotlib.cm import ScalarMappable
 from matplotlib.collections import LineCollection
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, Normalize, SymLogNorm
 
 from .params import (Params, DemoState, TUNABLES, PARAM_ROWS, FIRE_ONCE_ROWS,
                      FIXED_MODEL_ROWS, SINGLE_ROWS, row_is_relevant)
@@ -351,17 +352,23 @@ class CovarianceArtist:
     spot PF's heading-wheel legend uses -- fixed at 3x3 for EKF, growing
     from 3x3 to 3+2*NL for EKF-SLAM as landmarks join the state.
 
-    Shows the *correlation* matrix (each entry normalised by its row and
-    column standard deviations), not raw covariance: position variance
-    (m^2), heading variance (rad^2) and landmark blocks live on wildly
-    different scales, which would bury the actual structure -- which
-    blocks are correlated with which, and how strongly -- under whichever
-    block happens to have the biggest raw numbers. Correlation is bounded
-    in [-1, 1] regardless of scale, so a diverging colormap centred at 0
-    reads directly: this is the same "how correlated is this landmark
-    with the robot" question 'v' (EKFSLAM.mapped_landmarks_relative)
-    answers for one landmark's ellipse at a time, here for every block at
-    once.
+    Colour is sign(P)*log10(sqrt(|P|)), not raw P: position variance (m^2),
+    heading variance (rad^2) and landmark blocks live on wildly different
+    scales, which would bury the actual structure -- which cells are big,
+    which are small, which are positive or negative -- under whichever
+    block happens to have the biggest raw numbers on a linear scale. The
+    signed log-of-sqrt compresses that range while keeping sign, scaled
+    each frame to that frame's own largest magnitude (there's no fixed
+    bound the way a correlation matrix's -1..1 would give for free), so a
+    diverging colormap centred at 0 still reads directly -- including on
+    the diagonal, which *does* vary cell to cell here (unlike a
+    correlation matrix, where it's trivially 1.0 everywhere): a bigger
+    sig_x than sig_y is visibly a stronger colour, not just a bigger
+    printed number. Note this makes the scale genuinely logarithmic: a
+    tiny but nonzero cell reads as *strongly* coloured, not faintly, since
+    log10 of something near zero is large in magnitude -- only an exact
+    0.0 stays neutral. The printed values themselves (see show_values) are
+    always the real, untransformed P[i, j].
 
     Rows/columns are drawn in the state vector's own physical order --
     the robot's 3, then each landmark's 2 in *first-observed* order, not
@@ -372,15 +379,33 @@ class CovarianceArtist:
     to cross-reference.
     """
 
-    def __init__(self, ax):
+    def __init__(self, ax, cbar_ax=None, show_values=False):
         self.ax = ax
         self.im = None
         self.lines = []
         self.texts = []
+        # Printing every cell's value only makes sense at EKF's fixed 3x3 --
+        # EKF-SLAM's grid grows well past what 2-decimal numbers can fit
+        # without turning into clutter, so this is opt-in per instance,
+        # not automatic.
+        self.show_values = show_values
         ax.set_xticks([])
         ax.set_yticks([])
         for spine in ax.spines.values():
             spine.set_visible(False)
+
+        if cbar_ax is not None:
+            # A fixed ScalarMappable, decoupled from self.im's actual
+            # vmin/vmax (which now rescales every frame to that frame's
+            # own largest |sign(P)*log10(sqrt(|P|))| -- see set() below) and from
+            # self.im itself being recreated whenever the matrix grows.
+            # No ticks and no data-derived bound: ordering (which end is
+            # negative, which is positive, and that the middle is zero) is
+            # the whole point here, not exact numbers or a scale that would
+            # need re-labelling every frame anyway.
+            mappable = ScalarMappable(norm=Normalize(vmin=-1.0, vmax=1.0), cmap="coolwarm")
+            ax.figure.colorbar(mappable, cax=cbar_ax, ticks=[])
+            cbar_ax.set_ylabel("- value +", fontsize=6, labelpad=2)
 
     def set(self, P, blocks):
         """`blocks` is a list of (label, size) pairs, e.g.
@@ -389,8 +414,21 @@ class CovarianceArtist:
         sizes summing to len(P).
         """
         n = P.shape[0]
-        sd = np.sqrt(np.maximum(np.diag(P), 1e-12))
-        corr = np.clip(P / np.outer(sd, sd), -1.0, 1.0)
+        # SymLogNorm on raw P, not a hand-rolled transform: variance/
+        # covariance entries can span many orders of magnitude (a 0.05
+        # diagonal next to a 1e-5 off-diagonal), which would leave
+        # everything but the single largest cell looking flat under a
+        # linear colour scale -- but a plain signed log blows up for a
+        # genuinely negligible cell (log of near-zero is large in
+        # magnitude, so "basically zero" would look strongly coloured).
+        # SymLogNorm is linear within +-linthresh of zero (negligible
+        # cells stay pale) and logarithmic beyond it (a much bigger cell
+        # still reads as bigger, without swamping the rest the way a
+        # linear scale would). linthresh and vmax both scale with this
+        # frame's own largest magnitude, since there's no fixed bound the
+        # way correlation's -1..1 gave for free.
+        vmax = max(np.max(np.abs(P)), 1e-9)
+        norm = SymLogNorm(linthresh=vmax * 1e-3, vmin=-vmax, vmax=vmax)
 
         for artist in self.lines + self.texts:
             artist.remove()
@@ -405,10 +443,28 @@ class CovarianceArtist:
             # gradient -- coolwarm is built specifically for a smooth,
             # perceptually continuous path from blue through a neutral
             # midpoint to red.
-            self.im = self.ax.imshow(corr, cmap="coolwarm", vmin=-1.0, vmax=1.0,
+            self.im = self.ax.imshow(P, cmap="coolwarm", norm=norm,
                                      origin="upper", extent=(0, n, n, 0), zorder=1)
         else:
-            self.im.set_data(corr)
+            self.im.set_data(P)
+            self.im.set_norm(norm)
+
+        if self.show_values:
+            # Every printed number is P[i, j] exactly as it is -- variance
+            # on the diagonal, raw covariance off it -- not whatever
+            # SymLogNorm maps it to for the *colour*.
+            for i in range(n):
+                for j in range(n):
+                    # White on the strongly-coloured cells, black on the
+                    # pale ones near this frame's zero -- coolwarm's centre
+                    # is light enough that a single fixed colour would be
+                    # illegible on one half or the other. norm(x) lands in
+                    # [0, 1] with 0.5 at zero, so distance from 0.5 is how
+                    # far this cell sits from the middle of the scale.
+                    color = "w" if abs(norm(P[i, j]) - 0.5) > 0.3 else "k"
+                    self.texts.append(self.ax.text(
+                        j + 0.5, i + 0.5, f"{P[i, j]:.2g}",
+                        ha="center", va="center", fontsize=6, color=color, zorder=3))
 
         pos = 0
         for label, size in blocks:

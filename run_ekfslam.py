@@ -64,7 +64,8 @@ def main():
         landmark_map = draw.LandmarkMapArtist(ax, color="r")
         rays = draw.RayArtist(ax)
         cov_ax = fig.add_axes([0.03, 0.02, 0.20, 0.20])
-        cov = draw.CovarianceArtist(cov_ax)
+        cbar_ax = fig.add_axes([0.245, 0.02, 0.025, 0.20])
+        cov = draw.CovarianceArtist(cov_ax, cbar_ax=cbar_ax)
         panel = draw.Panel(fig, flags=[("95%-Gaussian", lambda s: s.dispGaussApprox),
                                        ("ellipses", lambda s: "robot-relative" if s.relativeUncertainty else "world"),
                                        ("extero", lambda s: not s.extero_off),

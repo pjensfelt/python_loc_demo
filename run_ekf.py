@@ -42,7 +42,8 @@ def main():
         gauss = draw.GaussArtist(ax, color="b")
         rays = draw.RayArtist(ax)
         cov_ax = fig.add_axes([0.03, 0.02, 0.20, 0.20])
-        cov = draw.CovarianceArtist(cov_ax)
+        cbar_ax = fig.add_axes([0.245, 0.02, 0.025, 0.20])
+        cov = draw.CovarianceArtist(cov_ax, cbar_ax=cbar_ax, show_values=True)
         panel = draw.Panel(fig, flags=[("95%-Gaussian", lambda s: s.dispGaussApprox),
                                        ("extero", lambda s: not s.extero_off),
                                        ("true robot", lambda s: s.showTrueRobot)],
